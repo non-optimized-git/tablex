@@ -1,0 +1,63 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 自定义滚动条 - MUJI 风格 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #F5F0E8;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #D5C8B5;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #E8E4DC;
+}
+
+/* 确保 checked 状态正确显示 */
+input[type="checkbox"]:checked {
+  accent-color: #1E40AF;
+}
+
+/* 文件输入样式 */
+input[type="file"]::file-selector-button {
+  font-family: inherit;
+}
+
+/* Focus ring styles */
+input:focus,
+select:focus,
+button:focus {
+  outline: none;
+}
+
+.focus-ring:focus {
+  box-shadow: 0 0 0 2px #DBEAFE, 0 0 0 4px #1E40AF;
+}
+
+/* Skeleton animation */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #E8E4DC 25%, #F5F0E8 50%, #E8E4DC 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
