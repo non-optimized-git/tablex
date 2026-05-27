@@ -15,30 +15,43 @@ const MODULE_KEYWORDS = {
   '产品体验': ['满意度', '体验', '质量', '服务', '售后']
 };
 
-function detectModule(header) {
-  if (!header) return '其他';
-  for (const [mod, keywords] of Object.entries(MODULE_KEYWORDS)) {
-    for (const kw of keywords) {
-      if (header.includes(kw)) return mod;
+function getPrefix(header) {
+  if (!header) return '';
+  const cleaned = String(header).replace(/<[^>]*>/g, '').replace(/^[a-fA-F0-9]{6}">/, '').trim();
+  const match = cleaned.match(/^([A-Za-z]?\d+[.\-]?\d*|[A-Za-z]+\d+|[一-龥]+)/);
+  return match ? match[0] : cleaned.slice(0, 4);
+}
+
+function prefixSimilarity(a, b) {
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  return i / Math.max(a.length, b.length);
+}
+
+function autoDetectGroups(headers, threshold = 0.35) {
+  if (!headers || headers.length === 0) return [];
+  const groups = [];
+  let currentGroup = [0];
+  for (let i = 1; i < headers.length; i++) {
+    const sim = prefixSimilarity(getPrefix(headers[i - 1]), getPrefix(headers[i]));
+    if (sim >= threshold) {
+      currentGroup.push(i);
+    } else {
+      groups.push(currentGroup);
+      currentGroup = [i];
     }
   }
-  return '其他';
+  groups.push(currentGroup);
+  return groups;
 }
 
 function getShortTitle(header) {
   if (!header) return '';
-  // Strip HTML tags and color codes like ff2f00">text
-  const cleaned = String(header).replace(/<[^>]*>/g, '').replace(/^[a-fA-F0-9]{6}">/, '').trim();
-  const parts = cleaned.split(/[\s_#]+/);
+  const parts = header.split(/[\s_#]+/);
   for (let i = parts.length - 1; i >= 0; i--) {
     if (parts[i].length >= 4) return parts[i];
   }
-  return cleaned.slice(0, 20);
-}
-
-function escapeHtml(str) {
-  if (str === null || str === undefined) return '';
-  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return header.slice(0, 20);
 }
 
 // ==================== EXCEL PARSER ====================
@@ -177,73 +190,37 @@ function r3(x) {
 }
 
 // ==================== EXCEL WRITER ====================
-// ==================== EXCEL STYLE HELPERS (ExcelJS) ====================
-function makeExcelJSBorder() {
-  return {
-    top: { style: 'thin' }, bottom: { style: 'thin' },
-    left: { style: 'thin' }, right: { style: 'thin' }
-  };
+const RED_FILL = 'FFFFCCCC';
+const GREEN_FILL = 'FFCCFFCC';
+const GRAY_FILL = 'FFD9D9D9';
+
+function makeBorderStyle() {
+  return { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
 }
 
-function applyTitleStyle(cell) {
-  cell.font = { name: '黑体', size: 12 };
+function makeHeaderStyle(align) {
+  return { font: { name: '黑体', sz: 10 }, fill: { patternType: 'solid', fgColor: { rgb: GRAY_FILL } }, alignment: { horizontal: align }, border: makeBorderStyle() };
 }
 
-function applySubtitleStyle(cell) {
-  cell.font = { name: '黑体', size: 9 };
+function makeDataStyle(align) {
+  return { font: { name: '黑体', sz: 11 }, alignment: { horizontal: align }, border: makeBorderStyle() };
 }
 
-function applyHeaderStyle(cell) {
-  cell.font = { name: '黑体', size: 9, bold: true };
-  cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
-  cell.alignment = { horizontal: 'center' };
-  cell.border = makeExcelJSBorder();
+function makeFillStyle(color, align) {
+  return { font: { name: '黑体', sz: 11 }, fill: { patternType: 'solid', fgColor: { rgb: color } }, alignment: { horizontal: align }, border: makeBorderStyle() };
 }
 
-function applyDataStyle(cell) {
-  cell.font = { name: '黑体', size: 9 };
-  cell.border = makeExcelJSBorder();
-  cell.alignment = { horizontal: 'center' };
-}
-
-function applyPctStyle(cell) {
-  cell.font = { name: '黑体', size: 9 };
-  cell.border = makeExcelJSBorder();
-  cell.alignment = { horizontal: 'center' };
-  cell.numFmt = '0.0%';
-}
-
-function applyRedStyle(cell) {
-  cell.font = { name: '黑体', size: 9 };
-  cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFCCCC' } };
-  cell.border = makeExcelJSBorder();
-  cell.alignment = { horizontal: 'center' };
-  cell.numFmt = '0.0%';
-}
-
-function applyGreenStyle(cell) {
-  cell.font = { name: '黑体', size: 9 };
-  cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFCCFFCC' } };
-  cell.border = makeExcelJSBorder();
-  cell.alignment = { horizontal: 'center' };
-  cell.numFmt = '0.0%';
-}
-
-// ==================== EXCEL GENERATION (ExcelJS) ====================
-
-function colLetter(colIdx) {
-  // colIdx 0-based: 0=A, 1=B, ..., 25=Z, 26=AA, etc.
+function colNumToLetter(num) {
   let result = '';
-  let num = colIdx;
-  while (num >= 0) {
-    result = String.fromCharCode(65 + (num % 26)) + result;
-    num = Math.floor(num / 26) - 1;
-    if (num < 0) break;
+  while (num > 0) {
+    const rem = (num - 1) % 26;
+    result = String.fromCharCode(65 + rem) + result;
+    num = Math.floor((num - 1) / 26);
   }
   return result;
 }
 
-async function generateExcelWorkbook() {
+function generateExcelWorkbook() {
   const questions = selectedQuestions;
   if (!questions.length || !headers.length || !rows.length) return null;
 
@@ -251,330 +228,83 @@ async function generateExcelWorkbook() {
   const numGroups = orderedGroups.length;
   const hasGroups = numGroups > 0;
 
-  const wb = new ExcelJS.Workbook();
+  const table2Start = 2 + numGroups + 1;
+  const table3Start = table2Start + 2 + numGroups + 1;
 
-  // Iterate in original order, create new sheet when module changes
-  let currentModule = null;
-  let ws = null;
+  const wb = XLSX.utils.book_new();
 
-  for (const colIdx of questions) {
-    const header = headers[colIdx] || `列${colIdx}`;
-    const module = detectModule(header);
+  // Auto-group questions by prefix similarity
+  const questionHeaders = questions.map(idx => headers[idx] || `列${idx}`);
+  const autoGroups = autoDetectGroups(questionHeaders, 0.35);
 
-    // Start new sheet when module changes
-    if (module !== currentModule) {
-      if (ws) wb.addWorksheet(currentModule.slice(0, 31));
-      currentModule = module;
-      ws = wb.addWorksheet(module.slice(0, 31));
+  for (const groupIndices of autoGroups) {
+    const firstHeader = questionHeaders[groupIndices[0]];
+    const sheetName = getPrefix(firstHeader).slice(0, 31) || '题目';
+    const ws = {};
 
-      // Set column widths for 3-table layout
-      ws.getColumn(1).width = 18;
-      ws.getColumn(2).width = 10;
-      ws.getColumn(3).width = 10;
-      ws.getColumn(4).width = 10;
-      ws.getColumn(5).width = 2;
-      ws.getColumn(6).width = 18;
-      ws.getColumn(7).width = 10;
-      ws.getColumn(8).width = 10;
-      ws.getColumn(9).width = 10;
-      ws.getColumn(10).width = 2;
-      ws.getColumn(11).width = 18;
-      ws.getColumn(12).width = 10;
-      ws.getColumn(13).width = 10;
-      ws.getColumn(14).width = 10;
-    }
+    for (const colIdx of groupIndices) {
+      const header = questionHeaders[colIdx];
+      const title = getShortTitle(header);
+      const isMulti = isMultiChoice(rows, colIdx);
+      let rowNum = 1;
 
-    const title = getShortTitle(header);
-    const isMulti = isMultiChoice(rows, colIdx);
-    let rowNum = ws.rowCount + 1;
-
-    // Row 1: Title
-    ws.getCell(`A${rowNum}`).value = title;
-    applyTitleStyle(ws.getCell(`A${rowNum}`));
-    rowNum++;
-
-    // Row 2: Subtitle
-    ws.getCell(`A${rowNum}`).value = `题目: ${header} (${isMulti ? '多选' : '单选'})`;
-    applySubtitleStyle(ws.getCell(`A${rowNum}`));
-    rowNum++;
-
-    if (!hasGroups) {
-      // No groups: single simple table
-      const counts = countOptions(rows, colIdx, isMulti);
-      const totalUsers = countUsers(rows, colIdx);
-      const allOpts = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
-
-      // Header row
-      ws.getCell(`A${rowNum}`).value = '选项';
-      applyHeaderStyle(ws.getCell(`A${rowNum}`));
-      ws.getCell(`B${rowNum}`).value = 'Total';
-      applyHeaderStyle(ws.getCell(`B${rowNum}`));
-      ws.getCell(`C${rowNum}`).value = '占比';
-      applyHeaderStyle(ws.getCell(`C${rowNum}`));
+      ws[`A${rowNum}`] = { t: 's', v: title };
+      ws[`A${rowNum}`].s = { font: { name: '黑体', sz: 14 } };
       rowNum++;
 
-      // Base row
-      ws.getCell(`A${rowNum}`).value = 'base';
-      applyDataStyle(ws.getCell(`A${rowNum}`));
-      ws.getCell(`B${rowNum}`).value = totalUsers;
-      applyDataStyle(ws.getCell(`B${rowNum}`));
-      ws.getCell(`C${rowNum}`).value = '100%';
-      applyDataStyle(ws.getCell(`C${rowNum}`));
+      ws[`A${rowNum}`] = { t: 's', v: `题目: ${title} (${isMulti ? '多选' : '单选'})` };
+      ws[`A${rowNum}`].s = { font: { name: '黑体', sz: 9 } };
       rowNum++;
 
-      for (const opt of allOpts) {
-        const val = counts[opt] || 0;
-        const pct = totalUsers > 0 ? val / totalUsers : 0;
-        ws.getCell(`A${rowNum}`).value = opt;
-        applyDataStyle(ws.getCell(`A${rowNum}`));
-        ws.getCell(`B${rowNum}`).value = val;
-        applyDataStyle(ws.getCell(`B${rowNum}`));
-        ws.getCell(`C${rowNum}`).value = pct;
-        applyPctStyle(ws.getCell(`C${rowNum}`));
+      if (!hasGroups) {
+        const counts = countOptions(rows, colIdx, isMulti);
+        const totalUsers = countUsers(rows, colIdx);
+        const allOpts = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+
+        ws['A' + rowNum] = { t: 's', v: '选项' };
+        ws['A' + rowNum].s = makeHeaderStyle('left');
+        ws['B' + rowNum] = { t: 's', v: '次数' };
+        ws['B' + rowNum].s = makeHeaderStyle('center');
+        ws['C' + rowNum] = { t: 's', v: '占比' };
+        ws['C' + rowNum].s = makeHeaderStyle('center');
         rowNum++;
-      }
 
-      const meanVal = calcNumericMean(rows, colIdx);
-      if (meanVal !== null) {
-        ws.getCell(`A${rowNum}`).value = '平均值';
-        applyDataStyle(ws.getCell(`A${rowNum}`));
-        ws.getCell(`B${rowNum}`).value = meanVal;
-        applyDataStyle(ws.getCell(`B${rowNum}`));
-        ws.getCell(`B${rowNum}`).numFmt = '0.0';
-        ws.getCell(`C${rowNum}`).value = '';
-        applyDataStyle(ws.getCell(`C${rowNum}`));
+        ws['A' + rowNum] = { t: 's', v: 'base' };
+        ws['A' + rowNum].s = makeDataStyle('left');
+        ws['B' + rowNum] = { t: 'n', v: totalUsers };
+        ws['B' + rowNum].s = makeDataStyle('center');
+        ws['C' + rowNum] = { t: 's', v: '100%' };
+        ws['C' + rowNum].s = makeDataStyle('center');
         rowNum++;
-      }
 
-    } else {
-      // With groups: 3 tables side by side
-      const grpData = groupRowsCustom(rows, groups);
-      const groupCounts = {};
-      const groupUsers = {};
-      for (const g of orderedGroups) {
-        groupCounts[g] = countOptions(grpData[g], colIdx, isMulti);
-        groupUsers[g] = countUsers(grpData[g], colIdx);
-      }
-      const totalCounts = countOptions(rows, colIdx, isMulti);
-      const totalAllUsers = countUsers(rows, colIdx);
-
-      const allOptsSet = new Set();
-      for (const counts of Object.values(groupCounts)) {
-        for (const opt of Object.keys(counts)) allOptsSet.add(opt);
-      }
-      for (const opt of Object.keys(totalCounts)) allOptsSet.add(opt);
-
-      const allOptsCount = {};
-      for (const counts of Object.values(groupCounts)) {
-        for (const [opt, count] of Object.entries(counts)) {
-          allOptsCount[opt] = (allOptsCount[opt] || 0) + count;
-        }
-      }
-      const allOpts = [...allOptsSet].sort((a, b) => (allOptsCount[b] || 0) - (allOptsCount[a] || 0));
-
-      // Table column positions (0-based): t1=A-D(0-3), t2=F-I(5-8), t3=K-N(10-13)
-      const t1 = { opt: 0, tot: 1, g1: 2, g2: 3 };
-      const t2 = { opt: 5, tot: 6, g1: 7, g2: 8 };
-      const t3 = { opt: 10, tot: 11, g1: 12, g2: 13 };
-
-      // Row 3: Headers
-      const headerRow = rowNum;
-      for (const t of [t1, t2, t3]) {
-        ws.getCell(`${colLetter(t.opt)}${headerRow}`).value = '选项';
-        applyHeaderStyle(ws.getCell(`${colLetter(t.opt)}${headerRow}`));
-        ws.getCell(`${colLetter(t.tot)}${headerRow}`).value = 'Total';
-        applyHeaderStyle(ws.getCell(`${colLetter(t.tot)}${headerRow}`));
-        ws.getCell(`${colLetter(t.g1)}${headerRow}`).value = orderedGroups[0];
-        applyHeaderStyle(ws.getCell(`${colLetter(t.g1)}${headerRow}`));
-        ws.getCell(`${colLetter(t.g2)}${headerRow}`).value = orderedGroups[1];
-        applyHeaderStyle(ws.getCell(`${colLetter(t.g2)}${headerRow}`));
-      }
-      rowNum++;
-
-      // Row 4: Base row
-      for (const t of [t1, t2, t3]) {
-        ws.getCell(`${colLetter(t.opt)}${rowNum}`).value = 'base';
-        applyDataStyle(ws.getCell(`${colLetter(t.opt)}${rowNum}`));
-        ws.getCell(`${colLetter(t.tot)}${rowNum}`).value = totalAllUsers;
-        applyDataStyle(ws.getCell(`${colLetter(t.tot)}${rowNum}`));
-        ws.getCell(`${colLetter(t.g1)}${rowNum}`).value = groupUsers[orderedGroups[0]] || 0;
-        applyDataStyle(ws.getCell(`${colLetter(t.g1)}${rowNum}`));
-        ws.getCell(`${colLetter(t.g2)}${rowNum}`).value = groupUsers[orderedGroups[1]] || 0;
-        applyDataStyle(ws.getCell(`${colLetter(t.g2)}${rowNum}`));
-      }
-      rowNum++;
-
-      for (const opt of allOpts) {
-        const pcts = {};
-        for (const g of orderedGroups) {
-          const val = groupCounts[g][opt] || 0;
-          const total = groupUsers[g] || 0;
-          pcts[g] = total > 0 ? val / total : 0;
-        }
-        const totalVal = totalCounts[opt] || 0;
-        const totalPct = totalAllUsers > 0 ? totalVal / totalAllUsers : 0;
-
-        const allPcts = [totalPct, pcts[orderedGroups[0]], pcts[orderedGroups[1]]];
-        const maxPct = Math.max(...allPcts);
-        const nonZeroPcts = allPcts.filter(p => p > 0);
-        const minPct = nonZeroPcts.length > 0 ? Math.min(...nonZeroPcts) : null;
-        const hasMultipleDistinctValues = maxPct > 0 && minPct !== null && maxPct !== minPct;
-
-        // Table 1: counts
-        ws.getCell(`${colLetter(t1.opt)}${rowNum}`).value = opt;
-        applyDataStyle(ws.getCell(`${colLetter(t1.opt)}${rowNum}`));
-        ws.getCell(`${colLetter(t1.tot)}${rowNum}`).value = totalVal;
-        applyDataStyle(ws.getCell(`${colLetter(t1.tot)}${rowNum}`));
-        ws.getCell(`${colLetter(t1.g1)}${rowNum}`).value = groupCounts[orderedGroups[0]][opt] || 0;
-        applyDataStyle(ws.getCell(`${colLetter(t1.g1)}${rowNum}`));
-        ws.getCell(`${colLetter(t1.g2)}${rowNum}`).value = groupCounts[orderedGroups[1]][opt] || 0;
-        applyDataStyle(ws.getCell(`${colLetter(t1.g2)}${rowNum}`));
-
-        // Table 2: percentages (no fill)
-        ws.getCell(`${colLetter(t2.opt)}${rowNum}`).value = opt;
-        applyDataStyle(ws.getCell(`${colLetter(t2.opt)}${rowNum}`));
-        ws.getCell(`${colLetter(t2.tot)}${rowNum}`).value = totalPct;
-        applyPctStyle(ws.getCell(`${colLetter(t2.tot)}${rowNum}`));
-        ws.getCell(`${colLetter(t2.g1)}${rowNum}`).value = pcts[orderedGroups[0]];
-        applyPctStyle(ws.getCell(`${colLetter(t2.g1)}${rowNum}`));
-        ws.getCell(`${colLetter(t2.g2)}${rowNum}`).value = pcts[orderedGroups[1]];
-        applyPctStyle(ws.getCell(`${colLetter(t2.g2)}${rowNum}`));
-
-        // Table 3: percentages with red (max) / green (min)
-        ws.getCell(`${colLetter(t3.opt)}${rowNum}`).value = opt;
-        applyDataStyle(ws.getCell(`${colLetter(t3.opt)}${rowNum}`));
-
-        // Total column
-        if (totalPct === maxPct && maxPct > 0 && hasMultipleDistinctValues) {
-          ws.getCell(`${colLetter(t3.tot)}${rowNum}`).value = totalPct;
-          applyRedStyle(ws.getCell(`${colLetter(t3.tot)}${rowNum}`));
-        } else if (totalPct === minPct && minPct !== null && hasMultipleDistinctValues) {
-          ws.getCell(`${colLetter(t3.tot)}${rowNum}`).value = totalPct;
-          applyGreenStyle(ws.getCell(`${colLetter(t3.tot)}${rowNum}`));
-        } else {
-          ws.getCell(`${colLetter(t3.tot)}${rowNum}`).value = totalPct;
-          applyPctStyle(ws.getCell(`${colLetter(t3.tot)}${rowNum}`));
+        for (const opt of allOpts) {
+          const val = counts[opt] || 0;
+          const pct = totalUsers > 0 ? r3(val / totalUsers) : 0;
+          ws['A' + rowNum] = { t: 's', v: opt };
+          ws['A' + rowNum].s = makeDataStyle('left');
+          ws['B' + rowNum] = { t: 'n', v: val };
+          ws['B' + rowNum].s = makeDataStyle('center');
+          ws['C' + rowNum] = { t: 'n', v: pct, z: '0.0%' };
+          ws['C' + rowNum].s = makeDataStyle('center');
+          rowNum++;
         }
 
-        // Group 1 column
-        const g1Pct = pcts[orderedGroups[0]];
-        if (g1Pct === maxPct && maxPct > 0 && hasMultipleDistinctValues) {
-          ws.getCell(`${colLetter(t3.g1)}${rowNum}`).value = g1Pct;
-          applyRedStyle(ws.getCell(`${colLetter(t3.g1)}${rowNum}`));
-        } else if (g1Pct === minPct && minPct !== null && hasMultipleDistinctValues) {
-          ws.getCell(`${colLetter(t3.g1)}${rowNum}`).value = g1Pct;
-          applyGreenStyle(ws.getCell(`${colLetter(t3.g1)}${rowNum}`));
-        } else {
-          ws.getCell(`${colLetter(t3.g1)}${rowNum}`).value = g1Pct;
-          applyPctStyle(ws.getCell(`${colLetter(t3.g1)}${rowNum}`));
+        const meanVal = calcNumericMean(rows, colIdx);
+        if (meanVal !== null) {
+          ws['A' + rowNum] = { t: 's', v: '平均值' };
+          ws['A' + rowNum].s = makeDataStyle('left');
+          ws['B' + rowNum] = { t: 'n', v: meanVal, z: '0.0' };
+          ws['B' + rowNum].s = makeDataStyle('center');
+          ws['C' + rowNum] = { t: 's', v: '' };
+          ws['C' + rowNum].s = makeDataStyle('center');
+          rowNum++;
         }
 
-        // Group 2 column
-        const g2Pct = pcts[orderedGroups[1]];
-        if (g2Pct === maxPct && maxPct > 0 && hasMultipleDistinctValues) {
-          ws.getCell(`${colLetter(t3.g2)}${rowNum}`).value = g2Pct;
-          applyRedStyle(ws.getCell(`${colLetter(t3.g2)}${rowNum}`));
-        } else if (g2Pct === minPct && minPct !== null && hasMultipleDistinctValues) {
-          ws.getCell(`${colLetter(t3.g2)}${rowNum}`).value = g2Pct;
-          applyGreenStyle(ws.getCell(`${colLetter(t3.g2)}${rowNum}`));
-        } else {
-          ws.getCell(`${colLetter(t3.g2)}${rowNum}`).value = g2Pct;
-          applyPctStyle(ws.getCell(`${colLetter(t3.g2)}${rowNum}`));
-        }
+        ws['!ref'] = `A1:C${rowNum - 1}`;
+        ws['!cols'] = [{ wch: 25 }, { wch: 10 }, { wch: 10 }];
 
-        rowNum++;
-      }
-
-      // Mean row
-      const means = {};
-      for (const g of orderedGroups) {
-        means[g] = calcNumericMean(grpData[g], colIdx);
-      }
-      const totalMean = calcNumericMean(rows, colIdx);
-
-      if (totalMean !== null || Object.values(means).some(m => m !== null)) {
-        const allMeans = Object.values(means).filter(m => m !== null);
-        if (totalMean !== null) allMeans.push(totalMean);
-        const maxM = allMeans.length > 0 ? Math.max(...allMeans) : null;
-        const minM = allMeans.length > 0 ? Math.min(...allMeans.filter(m => m > 0)) : null;
-        const hasMultipleDistinctMeans = maxM !== null && minM !== null && maxM !== minM;
-
-        // Table 1 mean
-        ws.getCell(`${colLetter(t1.opt)}${rowNum}`).value = '平均值';
-        applyDataStyle(ws.getCell(`${colLetter(t1.opt)}${rowNum}`));
-        ws.getCell(`${colLetter(t1.tot)}${rowNum}`).value = totalMean !== null ? totalMean : 0;
-        applyDataStyle(ws.getCell(`${colLetter(t1.tot)}${rowNum}`));
-        ws.getCell(`${colLetter(t1.tot)}${rowNum}`).numFmt = '0.0';
-        ws.getCell(`${colLetter(t1.g1)}${rowNum}`).value = means[orderedGroups[0]] !== null ? means[orderedGroups[0]] : 0;
-        applyDataStyle(ws.getCell(`${colLetter(t1.g1)}${rowNum}`));
-        ws.getCell(`${colLetter(t1.g1)}${rowNum}`).numFmt = '0.0';
-        ws.getCell(`${colLetter(t1.g2)}${rowNum}`).value = means[orderedGroups[1]] !== null ? means[orderedGroups[1]] : 0;
-        applyDataStyle(ws.getCell(`${colLetter(t1.g2)}${rowNum}`));
-        ws.getCell(`${colLetter(t1.g2)}${rowNum}`).numFmt = '0.0';
-
-        // Table 2 mean
-        ws.getCell(`${colLetter(t2.opt)}${rowNum}`).value = '平均值';
-        applyDataStyle(ws.getCell(`${colLetter(t2.opt)}${rowNum}`));
-        ws.getCell(`${colLetter(t2.tot)}${rowNum}`).value = totalMean !== null ? totalMean : 0;
-        applyDataStyle(ws.getCell(`${colLetter(t2.tot)}${rowNum}`));
-        ws.getCell(`${colLetter(t2.tot)}${rowNum}`).numFmt = '0.0';
-        ws.getCell(`${colLetter(t2.g1)}${rowNum}`).value = means[orderedGroups[0]] !== null ? means[orderedGroups[0]] : 0;
-        applyDataStyle(ws.getCell(`${colLetter(t2.g1)}${rowNum}`));
-        ws.getCell(`${colLetter(t2.g1)}${rowNum}`).numFmt = '0.0';
-        ws.getCell(`${colLetter(t2.g2)}${rowNum}`).value = means[orderedGroups[1]] !== null ? means[orderedGroups[1]] : 0;
-        applyDataStyle(ws.getCell(`${colLetter(t2.g2)}${rowNum}`));
-        ws.getCell(`${colLetter(t2.g2)}${rowNum}`).numFmt = '0.0';
-
-        // Table 3 mean with red/green
-        ws.getCell(`${colLetter(t3.opt)}${rowNum}`).value = '平均值';
-        applyDataStyle(ws.getCell(`${colLetter(t3.opt)}${rowNum}`));
-
-        const m0 = totalMean;
-        if (m0 !== null && m0 === maxM && hasMultipleDistinctMeans) {
-          ws.getCell(`${colLetter(t3.tot)}${rowNum}`).value = m0;
-          applyRedStyle(ws.getCell(`${colLetter(t3.tot)}${rowNum}`));
-        } else if (m0 !== null && m0 === minM && hasMultipleDistinctMeans) {
-          ws.getCell(`${colLetter(t3.tot)}${rowNum}`).value = m0;
-          applyGreenStyle(ws.getCell(`${colLetter(t3.tot)}${rowNum}`));
-        } else {
-          ws.getCell(`${colLetter(t3.tot)}${rowNum}`).value = m0 !== null ? m0 : 0;
-          applyDataStyle(ws.getCell(`${colLetter(t3.tot)}${rowNum}`));
-        }
-        ws.getCell(`${colLetter(t3.tot)}${rowNum}`).numFmt = '0.0';
-
-        const m1 = means[orderedGroups[0]];
-        if (m1 !== null && m1 === maxM && hasMultipleDistinctMeans) {
-          ws.getCell(`${colLetter(t3.g1)}${rowNum}`).value = m1;
-          applyRedStyle(ws.getCell(`${colLetter(t3.g1)}${rowNum}`));
-        } else if (m1 !== null && m1 === minM && hasMultipleDistinctMeans) {
-          ws.getCell(`${colLetter(t3.g1)}${rowNum}`).value = m1;
-          applyGreenStyle(ws.getCell(`${colLetter(t3.g1)}${rowNum}`));
-        } else {
-          ws.getCell(`${colLetter(t3.g1)}${rowNum}`).value = m1 !== null ? m1 : 0;
-          applyDataStyle(ws.getCell(`${colLetter(t3.g1)}${rowNum}`));
-        }
-        ws.getCell(`${colLetter(t3.g1)}${rowNum}`).numFmt = '0.0';
-
-        const m2 = means[orderedGroups[1]];
-        if (m2 !== null && m2 === maxM && hasMultipleDistinctMeans) {
-          ws.getCell(`${colLetter(t3.g2)}${rowNum}`).value = m2;
-          applyRedStyle(ws.getCell(`${colLetter(t3.g2)}${rowNum}`));
-        } else if (m2 !== null && m2 === minM && hasMultipleDistinctMeans) {
-          ws.getCell(`${colLetter(t3.g2)}${rowNum}`).value = m2;
-          applyGreenStyle(ws.getCell(`${colLetter(t3.g2)}${rowNum}`));
-        } else {
-          ws.getCell(`${colLetter(t3.g2)}${rowNum}`).value = m2 !== null ? m2 : 0;
-          applyDataStyle(ws.getCell(`${colLetter(t3.g2)}${rowNum}`));
-        }
-        ws.getCell(`${colLetter(t3.g2)}${rowNum}`).numFmt = '0.0';
-
-        rowNum++;
-      }
-    }
-  }
-
-  return wb;
-}
+      } else {
+        const grpData = groupRowsCustom(rows, groups);
         const groupCounts = {};
         const groupUsers = {};
         for (const g of orderedGroups) {
@@ -598,35 +328,56 @@ async function generateExcelWorkbook() {
         }
         const allOpts = [...allOptsSet].sort((a, b) => (allOptsCount[b] || 0) - (allOptsCount[a] || 0));
 
-        // Table column positions (0-based): t1=A-D(0-3), t2=F-I(5-8), t3=K-N(10-13)
-        const t1 = { opt: 0, tot: 1, g1: 2, g2: 3 };
-        const t2 = { opt: 5, tot: 6, g1: 7, g2: 8 };
-        const t3 = { opt: 10, tot: 11, g1: 12, g2: 13 };
-
-        // Row 3: Headers
         const headerRow = rowNum;
-        for (const t of [t1, t2, t3]) {
-          ws.getCell(`${colLetter(t.opt)}${headerRow}`).value = '选项';
-          applyHeaderStyle(ws.getCell(`${colLetter(t.opt)}${headerRow}`));
-          ws.getCell(`${colLetter(t.tot)}${headerRow}`).value = 'Total';
-          applyHeaderStyle(ws.getCell(`${colLetter(t.tot)}${headerRow}`));
-          ws.getCell(`${colLetter(t.g1)}${headerRow}`).value = orderedGroups[0];
-          applyHeaderStyle(ws.getCell(`${colLetter(t.g1)}${headerRow}`));
-          ws.getCell(`${colLetter(t.g2)}${headerRow}`).value = orderedGroups[1];
-          applyHeaderStyle(ws.getCell(`${colLetter(t.g2)}${headerRow}`));
+        ws['A' + headerRow] = { t: 's', v: '选项' };
+        ws['A' + headerRow].s = makeHeaderStyle('left');
+        ws['B' + headerRow] = { t: 's', v: 'Total' };
+        ws['B' + headerRow].s = makeHeaderStyle('center');
+        for (let i = 0; i < numGroups; i++) {
+          ws[colNumToLetter(67 + i) + headerRow] = { t: 's', v: orderedGroups[i] };
+          ws[colNumToLetter(67 + i) + headerRow].s = makeHeaderStyle('center');
+        }
+        ws[colNumToLetter(table2Start) + headerRow] = { t: 's', v: '选项' };
+        ws[colNumToLetter(table2Start) + headerRow].s = makeHeaderStyle('left');
+        ws[colNumToLetter(table2Start + 1) + headerRow] = { t: 's', v: 'Total' };
+        ws[colNumToLetter(table2Start + 1) + headerRow].s = makeHeaderStyle('center');
+        for (let i = 0; i < numGroups; i++) {
+          ws[colNumToLetter(table2Start + 2 + i) + headerRow] = { t: 's', v: orderedGroups[i] };
+          ws[colNumToLetter(table2Start + 2 + i) + headerRow].s = makeHeaderStyle('center');
+        }
+        ws[colNumToLetter(table3Start) + headerRow] = { t: 's', v: '选项' };
+        ws[colNumToLetter(table3Start) + headerRow].s = makeHeaderStyle('left');
+        ws[colNumToLetter(table3Start + 1) + headerRow] = { t: 's', v: 'Total' };
+        ws[colNumToLetter(table3Start + 1) + headerRow].s = makeHeaderStyle('center');
+        for (let i = 0; i < numGroups; i++) {
+          ws[colNumToLetter(table3Start + 2 + i) + headerRow] = { t: 's', v: orderedGroups[i] };
+          ws[colNumToLetter(table3Start + 2 + i) + headerRow].s = makeHeaderStyle('center');
         }
         rowNum++;
 
-        // Row 4: Base row
-        for (const t of [t1, t2, t3]) {
-          ws.getCell(`${colLetter(t.opt)}${rowNum}`).value = 'base';
-          applyDataStyle(ws.getCell(`${colLetter(t.opt)}${rowNum}`));
-          ws.getCell(`${colLetter(t.tot)}${rowNum}`).value = totalAllUsers;
-          applyDataStyle(ws.getCell(`${colLetter(t.tot)}${rowNum}`));
-          ws.getCell(`${colLetter(t.g1)}${rowNum}`).value = groupUsers[orderedGroups[0]] || 0;
-          applyDataStyle(ws.getCell(`${colLetter(t.g1)}${rowNum}`));
-          ws.getCell(`${colLetter(t.g2)}${rowNum}`).value = groupUsers[orderedGroups[1]] || 0;
-          applyDataStyle(ws.getCell(`${colLetter(t.g2)}${rowNum}`));
+        ws['A' + rowNum] = { t: 's', v: 'base' };
+        ws['A' + rowNum].s = makeDataStyle('left');
+        ws['B' + rowNum] = { t: 'n', v: totalAllUsers };
+        ws['B' + rowNum].s = makeDataStyle('center');
+        for (let i = 0; i < numGroups; i++) {
+          ws[colNumToLetter(67 + i) + rowNum] = { t: 'n', v: groupUsers[orderedGroups[i]] || 0 };
+          ws[colNumToLetter(67 + i) + rowNum].s = makeDataStyle('center');
+        }
+        ws[colNumToLetter(table2Start) + rowNum] = { t: 's', v: 'base' };
+        ws[colNumToLetter(table2Start) + rowNum].s = makeDataStyle('left');
+        ws[colNumToLetter(table2Start + 1) + rowNum] = { t: 'n', v: totalAllUsers };
+        ws[colNumToLetter(table2Start + 1) + rowNum].s = makeDataStyle('center');
+        for (let i = 0; i < numGroups; i++) {
+          ws[colNumToLetter(table2Start + 2 + i) + rowNum] = { t: 'n', v: groupUsers[orderedGroups[i]] || 0 };
+          ws[colNumToLetter(table2Start + 2 + i) + rowNum].s = makeDataStyle('center');
+        }
+        ws[colNumToLetter(table3Start) + rowNum] = { t: 's', v: 'base' };
+        ws[colNumToLetter(table3Start) + rowNum].s = makeDataStyle('left');
+        ws[colNumToLetter(table3Start + 1) + rowNum] = { t: 'n', v: totalAllUsers };
+        ws[colNumToLetter(table3Start + 1) + rowNum].s = makeDataStyle('center');
+        for (let i = 0; i < numGroups; i++) {
+          ws[colNumToLetter(table3Start + 2 + i) + rowNum] = { t: 'n', v: groupUsers[orderedGroups[i]] || 0 };
+          ws[colNumToLetter(table3Start + 2 + i) + rowNum].s = makeDataStyle('center');
         }
         rowNum++;
 
@@ -635,200 +386,135 @@ async function generateExcelWorkbook() {
           for (const g of orderedGroups) {
             const val = groupCounts[g][opt] || 0;
             const total = groupUsers[g] || 0;
-            pcts[g] = total > 0 ? val / total : 0;
+            pcts[g] = total > 0 ? r3(val / total) : 0;
           }
           const totalVal = totalCounts[opt] || 0;
-          const totalPct = totalAllUsers > 0 ? totalVal / totalAllUsers : 0;
+          const totalPct = totalAllUsers > 0 ? r3(totalVal / totalAllUsers) : 0;
 
-          const allPcts = [totalPct, pcts[orderedGroups[0]], pcts[orderedGroups[1]]];
-          const maxPct = Math.max(...allPcts);
-          const nonZeroPcts = allPcts.filter(p => p > 0);
-          const minPct = nonZeroPcts.length > 0 ? Math.min(...nonZeroPcts) : null;
-          const hasMultipleDistinctValues = maxPct > 0 && minPct !== null && maxPct !== minPct;
+          const maxPct = Math.max(...Object.values(pcts), totalPct);
+          const minPct = Math.min(...Object.values(pcts), totalPct);
 
-          // Table 1: counts
-          ws.getCell(`${colLetter(t1.opt)}${rowNum}`).value = opt;
-          applyDataStyle(ws.getCell(`${colLetter(t1.opt)}${rowNum}`));
-          ws.getCell(`${colLetter(t1.tot)}${rowNum}`).value = totalVal;
-          applyDataStyle(ws.getCell(`${colLetter(t1.tot)}${rowNum}`));
-          ws.getCell(`${colLetter(t1.g1)}${rowNum}`).value = groupCounts[orderedGroups[0]][opt] || 0;
-          applyDataStyle(ws.getCell(`${colLetter(t1.g1)}${rowNum}`));
-          ws.getCell(`${colLetter(t1.g2)}${rowNum}`).value = groupCounts[orderedGroups[1]][opt] || 0;
-          applyDataStyle(ws.getCell(`${colLetter(t1.g2)}${rowNum}`));
-
-          // Table 2: percentages (no fill)
-          ws.getCell(`${colLetter(t2.opt)}${rowNum}`).value = opt;
-          applyDataStyle(ws.getCell(`${colLetter(t2.opt)}${rowNum}`));
-          ws.getCell(`${colLetter(t2.tot)}${rowNum}`).value = totalPct;
-          applyPctStyle(ws.getCell(`${colLetter(t2.tot)}${rowNum}`));
-          ws.getCell(`${colLetter(t2.g1)}${rowNum}`).value = pcts[orderedGroups[0]];
-          applyPctStyle(ws.getCell(`${colLetter(t2.g1)}${rowNum}`));
-          ws.getCell(`${colLetter(t2.g2)}${rowNum}`).value = pcts[orderedGroups[1]];
-          applyPctStyle(ws.getCell(`${colLetter(t2.g2)}${rowNum}`));
-
-          // Table 3: percentages with red (max) / green (min)
-          ws.getCell(`${colLetter(t3.opt)}${rowNum}`).value = opt;
-          applyDataStyle(ws.getCell(`${colLetter(t3.opt)}${rowNum}`));
-
-          // Total column
-          if (totalPct === maxPct && maxPct > 0 && hasMultipleDistinctValues) {
-            ws.getCell(`${colLetter(t3.tot)}${rowNum}`).value = totalPct;
-            applyRedStyle(ws.getCell(`${colLetter(t3.tot)}${rowNum}`));
-          } else if (totalPct === minPct && minPct !== null && hasMultipleDistinctValues) {
-            ws.getCell(`${colLetter(t3.tot)}${rowNum}`).value = totalPct;
-            applyGreenStyle(ws.getCell(`${colLetter(t3.tot)}${rowNum}`));
-          } else {
-            ws.getCell(`${colLetter(t3.tot)}${rowNum}`).value = totalPct;
-            applyPctStyle(ws.getCell(`${colLetter(t3.tot)}${rowNum}`));
+          ws['A' + rowNum] = { t: 's', v: opt };
+          ws['A' + rowNum].s = makeDataStyle('left');
+          ws['B' + rowNum] = { t: 'n', v: totalVal };
+          ws['B' + rowNum].s = makeDataStyle('center');
+          for (let i = 0; i < numGroups; i++) {
+            ws[colNumToLetter(67 + i) + rowNum] = { t: 'n', v: groupCounts[orderedGroups[i]][opt] || 0 };
+            ws[colNumToLetter(67 + i) + rowNum].s = makeDataStyle('center');
           }
 
-          // Group 1 column
-          const g1Pct = pcts[orderedGroups[0]];
-          if (g1Pct === maxPct && maxPct > 0 && hasMultipleDistinctValues) {
-            ws.getCell(`${colLetter(t3.g1)}${rowNum}`).value = g1Pct;
-            applyRedStyle(ws.getCell(`${colLetter(t3.g1)}${rowNum}`));
-          } else if (g1Pct === minPct && minPct !== null && hasMultipleDistinctValues) {
-            ws.getCell(`${colLetter(t3.g1)}${rowNum}`).value = g1Pct;
-            applyGreenStyle(ws.getCell(`${colLetter(t3.g1)}${rowNum}`));
-          } else {
-            ws.getCell(`${colLetter(t3.g1)}${rowNum}`).value = g1Pct;
-            applyPctStyle(ws.getCell(`${colLetter(t3.g1)}${rowNum}`));
+          ws[colNumToLetter(table2Start) + rowNum] = { t: 's', v: opt };
+          ws[colNumToLetter(table2Start) + rowNum].s = makeDataStyle('left');
+          ws[colNumToLetter(table2Start + 1) + rowNum] = { t: 'n', v: totalPct, z: '0.0%' };
+          ws[colNumToLetter(table2Start + 1) + rowNum].s = makeDataStyle('center');
+          for (let i = 0; i < numGroups; i++) {
+            ws[colNumToLetter(table2Start + 2 + i) + rowNum] = { t: 'n', v: pcts[orderedGroups[i]], z: '0.0%' };
+            ws[colNumToLetter(table2Start + 2 + i) + rowNum].s = makeDataStyle('center');
           }
 
-          // Group 2 column
-          const g2Pct = pcts[orderedGroups[1]];
-          if (g2Pct === maxPct && maxPct > 0 && hasMultipleDistinctValues) {
-            ws.getCell(`${colLetter(t3.g2)}${rowNum}`).value = g2Pct;
-            applyRedStyle(ws.getCell(`${colLetter(t3.g2)}${rowNum}`));
-          } else if (g2Pct === minPct && minPct !== null && hasMultipleDistinctValues) {
-            ws.getCell(`${colLetter(t3.g2)}${rowNum}`).value = g2Pct;
-            applyGreenStyle(ws.getCell(`${colLetter(t3.g2)}${rowNum}`));
-          } else {
-            ws.getCell(`${colLetter(t3.g2)}${rowNum}`).value = g2Pct;
-            applyPctStyle(ws.getCell(`${colLetter(t3.g2)}${rowNum}`));
+          ws[colNumToLetter(table3Start) + rowNum] = { t: 's', v: opt };
+          ws[colNumToLetter(table3Start) + rowNum].s = makeDataStyle('left');
+          ws[colNumToLetter(table3Start + 1) + rowNum] = { t: 'n', v: totalPct, z: '0.0%' };
+          if (totalPct === maxPct && maxPct > 0) ws[colNumToLetter(table3Start + 1) + rowNum].s = makeFillStyle(RED_FILL, 'center');
+          else if (totalPct === minPct && minPct > 0 && maxPct !== minPct) ws[colNumToLetter(table3Start + 1) + rowNum].s = makeFillStyle(GREEN_FILL, 'center');
+          else ws[colNumToLetter(table3Start + 1) + rowNum].s = makeDataStyle('center');
+          for (let i = 0; i < numGroups; i++) {
+            const g = orderedGroups[i];
+            const cellPct = pcts[g];
+            ws[colNumToLetter(table3Start + 2 + i) + rowNum] = { t: 'n', v: cellPct, z: '0.0%' };
+            if (cellPct === maxPct && maxPct > 0) ws[colNumToLetter(table3Start + 2 + i) + rowNum].s = makeFillStyle(RED_FILL, 'center');
+            else if (cellPct === minPct && minPct > 0 && maxPct !== minPct) ws[colNumToLetter(table3Start + 2 + i) + rowNum].s = makeFillStyle(GREEN_FILL, 'center');
+            else ws[colNumToLetter(table3Start + 2 + i) + rowNum].s = makeDataStyle('center');
           }
-
           rowNum++;
         }
 
-        // Mean row
         const means = {};
         for (const g of orderedGroups) {
           means[g] = calcNumericMean(grpData[g], colIdx);
         }
         const totalMean = calcNumericMean(rows, colIdx);
-
-        if (totalMean !== null || Object.values(means).some(m => m !== null)) {
-          const allMeans = Object.values(means).filter(m => m !== null);
-          if (totalMean !== null) allMeans.push(totalMean);
-          const maxM = allMeans.length > 0 ? Math.max(...allMeans) : null;
-          const minM = allMeans.length > 0 ? Math.min(...allMeans.filter(m => m > 0)) : null;
-          const hasMultipleDistinctMeans = maxM !== null && minM !== null && maxM !== minM;
-
-          // Table 1 mean
-          ws.getCell(`${colLetter(t1.opt)}${rowNum}`).value = '平均值';
-          applyDataStyle(ws.getCell(`${colLetter(t1.opt)}${rowNum}`));
-          ws.getCell(`${colLetter(t1.tot)}${rowNum}`).value = totalMean !== null ? totalMean : 0;
-          applyDataStyle(ws.getCell(`${colLetter(t1.tot)}${rowNum}`));
-          ws.getCell(`${colLetter(t1.tot)}${rowNum}`).numFmt = '0.0';
-          ws.getCell(`${colLetter(t1.g1)}${rowNum}`).value = means[orderedGroups[0]] !== null ? means[orderedGroups[0]] : 0;
-          applyDataStyle(ws.getCell(`${colLetter(t1.g1)}${rowNum}`));
-          ws.getCell(`${colLetter(t1.g1)}${rowNum}`).numFmt = '0.0';
-          ws.getCell(`${colLetter(t1.g2)}${rowNum}`).value = means[orderedGroups[1]] !== null ? means[orderedGroups[1]] : 0;
-          applyDataStyle(ws.getCell(`${colLetter(t1.g2)}${rowNum}`));
-          ws.getCell(`${colLetter(t1.g2)}${rowNum}`).numFmt = '0.0';
-
-          // Table 2 mean
-          ws.getCell(`${colLetter(t2.opt)}${rowNum}`).value = '平均值';
-          applyDataStyle(ws.getCell(`${colLetter(t2.opt)}${rowNum}`));
-          ws.getCell(`${colLetter(t2.tot)}${rowNum}`).value = totalMean !== null ? totalMean : 0;
-          applyDataStyle(ws.getCell(`${colLetter(t2.tot)}${rowNum}`));
-          ws.getCell(`${colLetter(t2.tot)}${rowNum}`).numFmt = '0.0';
-          ws.getCell(`${colLetter(t2.g1)}${rowNum}`).value = means[orderedGroups[0]] !== null ? means[orderedGroups[0]] : 0;
-          applyDataStyle(ws.getCell(`${colLetter(t2.g1)}${rowNum}`));
-          ws.getCell(`${colLetter(t2.g1)}${rowNum}`).numFmt = '0.0';
-          ws.getCell(`${colLetter(t2.g2)}${rowNum}`).value = means[orderedGroups[1]] !== null ? means[orderedGroups[1]] : 0;
-          applyDataStyle(ws.getCell(`${colLetter(t2.g2)}${rowNum}`));
-          ws.getCell(`${colLetter(t2.g2)}${rowNum}`).numFmt = '0.0';
-
-          // Table 3 mean with red/green
-          ws.getCell(`${colLetter(t3.opt)}${rowNum}`).value = '平均值';
-          applyDataStyle(ws.getCell(`${colLetter(t3.opt)}${rowNum}`));
-
-          const m0 = totalMean;
-          if (m0 !== null && m0 === maxM && hasMultipleDistinctMeans) {
-            ws.getCell(`${colLetter(t3.tot)}${rowNum}`).value = m0;
-            applyRedStyle(ws.getCell(`${colLetter(t3.tot)}${rowNum}`));
-          } else if (m0 !== null && m0 === minM && hasMultipleDistinctMeans) {
-            ws.getCell(`${colLetter(t3.tot)}${rowNum}`).value = m0;
-            applyGreenStyle(ws.getCell(`${colLetter(t3.tot)}${rowNum}`));
-          } else {
-            ws.getCell(`${colLetter(t3.tot)}${rowNum}`).value = m0 !== null ? m0 : 0;
-            applyDataStyle(ws.getCell(`${colLetter(t3.tot)}${rowNum}`));
-          }
-          ws.getCell(`${colLetter(t3.tot)}${rowNum}`).numFmt = '0.0';
-
-          const m1 = means[orderedGroups[0]];
-          if (m1 !== null && m1 === maxM && hasMultipleDistinctMeans) {
-            ws.getCell(`${colLetter(t3.g1)}${rowNum}`).value = m1;
-            applyRedStyle(ws.getCell(`${colLetter(t3.g1)}${rowNum}`));
-          } else if (m1 !== null && m1 === minM && hasMultipleDistinctMeans) {
-            ws.getCell(`${colLetter(t3.g1)}${rowNum}`).value = m1;
-            applyGreenStyle(ws.getCell(`${colLetter(t3.g1)}${rowNum}`));
-          } else {
-            ws.getCell(`${colLetter(t3.g1)}${rowNum}`).value = m1 !== null ? m1 : 0;
-            applyDataStyle(ws.getCell(`${colLetter(t3.g1)}${rowNum}`));
-          }
-          ws.getCell(`${colLetter(t3.g1)}${rowNum}`).numFmt = '0.0';
-
-          const m2 = means[orderedGroups[1]];
-          if (m2 !== null && m2 === maxM && hasMultipleDistinctMeans) {
-            ws.getCell(`${colLetter(t3.g2)}${rowNum}`).value = m2;
-            applyRedStyle(ws.getCell(`${colLetter(t3.g2)}${rowNum}`));
-          } else if (m2 !== null && m2 === minM && hasMultipleDistinctMeans) {
-            ws.getCell(`${colLetter(t3.g2)}${rowNum}`).value = m2;
-            applyGreenStyle(ws.getCell(`${colLetter(t3.g2)}${rowNum}`));
-          } else {
-            ws.getCell(`${colLetter(t3.g2)}${rowNum}`).value = m2 !== null ? m2 : 0;
-            applyDataStyle(ws.getCell(`${colLetter(t3.g2)}${rowNum}`));
-          }
-          ws.getCell(`${colLetter(t3.g2)}${rowNum}`).numFmt = '0.0';
-
-          rowNum++;
+        const validMeans = {};
+        for (const [g, m] of Object.entries(means)) {
+          if (m !== null) validMeans[g] = m;
         }
+        if (totalMean !== null) validMeans['Total'] = totalMean;
+        const maxM = Object.values(validMeans).length > 0 ? Math.max(...Object.values(validMeans)) : null;
+        const minM = Object.values(validMeans).length > 0 ? Math.min(...Object.values(validMeans)) : null;
+
+        ws['A' + rowNum] = { t: 's', v: '平均值' };
+        ws['A' + rowNum].s = makeDataStyle('left');
+        ws['B' + rowNum] = { t: 'n', v: totalMean, z: totalMean !== null ? '0.0' : '@' };
+        ws['B' + rowNum].s = makeDataStyle('center');
+        for (let i = 0; i < numGroups; i++) {
+          const m = means[orderedGroups[i]];
+          ws[colNumToLetter(67 + i) + rowNum] = { t: 'n', v: m, z: m !== null ? '0.0' : '@' };
+          ws[colNumToLetter(67 + i) + rowNum].s = makeDataStyle('center');
+        }
+        ws[colNumToLetter(table2Start) + rowNum] = { t: 's', v: '平均值' };
+        ws[colNumToLetter(table2Start) + rowNum].s = makeDataStyle('left');
+        ws[colNumToLetter(table2Start + 1) + rowNum] = { t: 'n', v: totalMean, z: totalMean !== null ? '0.0' : '@' };
+        ws[colNumToLetter(table2Start + 1) + rowNum].s = makeDataStyle('center');
+        for (let i = 0; i < numGroups; i++) {
+          const m = means[orderedGroups[i]];
+          ws[colNumToLetter(table2Start + 2 + i) + rowNum] = { t: 'n', v: m, z: m !== null ? '0.0' : '@' };
+          ws[colNumToLetter(table2Start + 2 + i) + rowNum].s = makeDataStyle('center');
+        }
+        ws[colNumToLetter(table3Start) + rowNum] = { t: 's', v: '平均值' };
+        ws[colNumToLetter(table3Start) + rowNum].s = makeDataStyle('left');
+        ws[colNumToLetter(table3Start + 1) + rowNum] = { t: 'n', v: totalMean, z: totalMean !== null ? '0.0' : '@' };
+        if (totalMean !== null && Object.keys(validMeans).length >= 2) {
+          if (totalMean === maxM) ws[colNumToLetter(table3Start + 1) + rowNum].s = makeFillStyle(RED_FILL, 'center');
+          else if (totalMean === minM && maxM !== minM) ws[colNumToLetter(table3Start + 1) + rowNum].s = makeFillStyle(GREEN_FILL, 'center');
+          else ws[colNumToLetter(table3Start + 1) + rowNum].s = makeDataStyle('center');
+        } else ws[colNumToLetter(table3Start + 1) + rowNum].s = makeDataStyle('center');
+        for (let i = 0; i < numGroups; i++) {
+          const g = orderedGroups[i];
+          const m = means[g];
+          ws[colNumToLetter(table3Start + 2 + i) + rowNum] = { t: 'n', v: m, z: m !== null ? '0.0' : '@' };
+          if (m !== null && Object.keys(validMeans).length >= 2) {
+            if (m === maxM) ws[colNumToLetter(table3Start + 2 + i) + rowNum].s = makeFillStyle(RED_FILL, 'center');
+            else if (m === minM && maxM !== minM) ws[colNumToLetter(table3Start + 2 + i) + rowNum].s = makeFillStyle(GREEN_FILL, 'center');
+            else ws[colNumToLetter(table3Start + 2 + i) + rowNum].s = makeDataStyle('center');
+          } else ws[colNumToLetter(table3Start + 2 + i) + rowNum].s = makeDataStyle('center');
+        }
+        rowNum++;
+
+        const lastCol = colNumToLetter(table3Start + 1 + numGroups);
+        ws['!ref'] = `A1:${lastCol}${rowNum - 1}`;
+        ws['!cols'] = [
+          { wch: 18 }, { wch: 10 }, ...Array(numGroups).fill({ wch: 10 }),
+          { wch: 1 },
+          { wch: 18 }, { wch: 10 }, ...Array(numGroups).fill({ wch: 10 }),
+          { wch: 1 },
+          { wch: 18 }, { wch: 10 }, ...Array(numGroups).fill({ wch: 10 })
+        ];
       }
     }
+
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
   }
 
   return wb;
 }
 
-async function downloadExcel() {
-  try {
-    console.log('selectedQuestions:', selectedQuestions);
-    console.log('groups:', groups);
-    const wb = await generateExcelWorkbook();
-    if (!wb) {
-      alert('请先上传 Excel 文件并选择题目');
-      return;
-    }
-    const buf = await wb.xlsx.writeBuffer();
-    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = '分析结果.xlsx';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  } catch (err) {
-    console.error('Excel export error:', err);
-    alert('导出失败: ' + err.message);
+function downloadExcel() {
+  const wb = generateExcelWorkbook();
+  if (!wb) {
+    alert('请先上传 Excel 文件并选择题目');
+    return;
   }
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = '分析结果.xlsx';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
-
-// Old XLSX-based functions removed - using ExcelJS now
 
 // ==================== UI HANDLERS ====================
 async function handleFile(file) {
@@ -840,8 +526,6 @@ async function handleFile(file) {
     selectedQuestions = headers.map((_, i) => i);
     groupingColIdx = null;
     groups = [];
-    const hint = document.getElementById('uploadHint');
-    if (hint) hint.textContent = `${file.name} 已上传，共 ${rows.length} 行数据`;
     render();
     loadSavedConfig();
   } catch (err) {
@@ -890,88 +574,34 @@ function toggleQuestion(idx) {
 }
 
 // Drag and drop for groups
-let dragVal = null;
-let dropTargetVal = null;
+let dragIdx = null;
 
-function handleGroupDragStart(e, val) {
-  dragVal = val;
+function handleGroupDragStart(e, idx) {
+  dragIdx = idx;
   e.dataTransfer.effectAllowed = 'move';
   e.currentTarget.classList.add('dragging-item');
 }
 
-function handleGroupDragEnter(e, val) {
-  e.preventDefault();
-  if (dragVal !== null && dragVal !== val) {
-    dropTargetVal = val;
-    updateDropIndicator(val);
-  }
-}
-
-function handleGroupDragLeave(e) {
-  // Only clear if we're leaving to outside the drop zone
-  if (!e.currentTarget.contains(e.relatedTarget)) {
-    dropTargetVal = null;
-    clearDropIndicator();
-  }
-}
-
-function handleGroupDragOver(e, val) {
+function handleGroupDragOver(e, idx) {
   e.preventDefault();
   e.dataTransfer.dropEffect = 'move';
-}
-
-function handleGroupDrop(e, val) {
-  e.preventDefault();
-  if (dragVal === null || dragVal === val) {
-    dragVal = null;
-    dropTargetVal = null;
-    clearDropIndicator();
-    return;
-  }
-  const dragIdx = groups.findIndex(g => g.name === dragVal && g.conditions[0][0] === groupingColIdx);
-  const targetIdx = groups.findIndex(g => g.name === val && g.conditions[0][0] === groupingColIdx);
-  if (dragIdx === -1 || targetIdx === -1) {
-    dragVal = null;
-    dropTargetVal = null;
-    clearDropIndicator();
-    return;
-  }
+  if (dragIdx === null || dragIdx === idx) return;
   const [removed] = groups.splice(dragIdx, 1);
-  groups.splice(targetIdx, 0, removed);
-  dragVal = null;
-  dropTargetVal = null;
-  clearDropIndicator();
-  render();
-  saveConfig();
+  groups.splice(idx, 0, removed);
+  dragIdx = idx;
+  renderSelectedGroups();
 }
 
 function handleGroupDragEnd(e) {
   e.currentTarget.classList.remove('dragging-item');
-  dragVal = null;
-  dropTargetVal = null;
-  clearDropIndicator();
+  dragIdx = null;
   saveConfig();
 }
 
-function updateDropIndicator(targetVal) {
-  const items = document.querySelectorAll('.group-tag');
-  items.forEach(item => {
-    const itemVal = item.getAttribute('data-val');
-    if (itemVal === targetVal) {
-      item.classList.add('drop-target');
-    } else {
-      item.classList.remove('drop-target');
-    }
-  });
-}
-
-function clearDropIndicator() {
-  document.querySelectorAll('.group-tag').forEach(item => {
-    item.classList.remove('drop-target');
-  });
-}
-
 // ==================== RENDER ====================
+function hide(el) { if (el) el.style.display = 'none'; }
+function show(el) { if (el) el.style.display = 'block'; }
+
 function render() {
   const uploadZone = document.getElementById('uploadZone');
   uploadZone.classList.remove('dragging');
@@ -979,59 +609,55 @@ function render() {
   const groupCard = document.getElementById('groupSelectorCard');
   const groupColSelect = document.getElementById('groupColSelect');
   const groupValuesContainer = document.getElementById('groupValuesContainer');
+  const selectedGroupsContainer = document.getElementById('selectedGroupsContainer');
+  const qCard = document.getElementById('questionSelectorCard');
+  const rCard = document.getElementById('resultPreviewCard');
 
   if (headers.length === 0) {
-    groupCard.style.display = 'none';
-    document.getElementById('questionSelectorCard').style.display = 'none';
-    document.getElementById('resultPreviewCard').style.display = 'none';
+    hide(groupCard);
+    hide(document.getElementById('questionSelectorCard'));
+    hide(document.getElementById('resultPreviewCard'));
     return;
   }
 
-  groupCard.style.display = 'block';
+  show(groupCard);
 
   const colOptions = headers.map((h, i) => ({ idx: i, name: getShortTitle(h) || `列${i + 1}` })).filter(h => h.name);
   groupColSelect.innerHTML = '<option value="">-- 选择分组列 --</option>' +
     colOptions.map(opt => `<option value="${opt.idx}" ${groupingColIdx === opt.idx ? 'selected' : ''}>${opt.name}</option>`).join('');
 
   if (groupingColIdx === null) {
-    groupValuesContainer.style.display = 'none';
+    hide(groupValuesContainer);
+    hide(selectedGroupsContainer);
   } else {
-    groupValuesContainer.style.display = 'block';
+    show(groupValuesContainer);
 
     const values = new Set();
     for (const row of rows) {
       const v = safe(row[groupingColIdx]);
       if (v !== null) values.add(v);
     }
-    const allValues = [...values].sort();
-    // Show selected values first (in groups order), then unselected (alphabetically)
-    const selectedVals = groups.filter(g => g.conditions[0][0] === groupingColIdx).map(g => g.name);
-    const unselectedVals = allValues.filter(v => !selectedVals.includes(v));
-    const sortedValues = [...selectedVals, ...unselectedVals];
+    const sortedValues = [...values].sort();
+    const selectedValues = groups.filter(g => g.conditions[0][0] === groupingColIdx).map(g => g.name);
 
-    document.getElementById('groupValues').innerHTML = sortedValues.map((val) => `
-      <div class="group-tag ${groups.some(g => g.name === val && g.conditions[0][0] === groupingColIdx) ? 'selected' : 'unselected'}"
-           draggable="true"
-           data-val="${escapeHtml(val)}"
-           ondragstart="handleGroupDragStart(event, '${val.replace(/'/g, "\\'")}')"
-           ondragenter="handleGroupDragEnter(event, '${val.replace(/'/g, "\\'")}')"
-           ondragleave="handleGroupDragLeave(event)"
-           ondragover="handleGroupDragOver(event, '${val.replace(/'/g, "\\'")}')"
-           ondrop="handleGroupDrop(event, '${val.replace(/'/g, "\\'")}')"
-           ondragend="handleGroupDragEnd(event)"
-           onclick="toggleGroupValue('${val.replace(/'/g, "\\'")}')">
-        <span class="drag-handle">⋮⋮</span>
-        <span>${escapeHtml(val)}</span>
-      </div>
+    document.getElementById('groupValues').innerHTML = sortedValues.map(val => `
+      <button class="group-tag ${selectedValues.includes(val) ? 'selected' : 'unselected'}"
+              onclick="toggleGroupValue('${val.replace(/'/g, "\\'")}')">${val}</button>
     `).join('');
+
+    if (groups.length > 0) {
+      show(selectedGroupsContainer);
+      renderSelectedGroups();
+    } else {
+      hide(selectedGroupsContainer);
+    }
   }
 
-  const qCard = document.getElementById('questionSelectorCard');
   if (headers.length === 0) {
-    qCard.style.display = 'none';
+    hide(qCard);
     return;
   }
-  qCard.style.display = 'block';
+  show(qCard);
 
   const modules = {};
   for (let i = 0; i < headers.length; i++) {
@@ -1046,23 +672,22 @@ function render() {
 
   document.getElementById('questionList').innerHTML = Object.entries(modules).map(([modName, questions]) => `
     <div class="question-module">
-      <h4>${escapeHtml(modName)}</h4>
+      <h4>${modName}</h4>
       ${questions.map(q => `
         <label class="question-item">
           <input type="checkbox" ${selectedQuestions.includes(q.idx) ? 'checked' : ''} onchange="toggleQuestion(${q.idx})">
-          <span>${escapeHtml(q.title)}</span>
+          <span>${q.title}</span>
           <span class="type-tag">${q.isMulti ? '多选' : '单选'}</span>
         </label>
       `).join('')}
     </div>
   `).join('');
 
-  const rCard = document.getElementById('resultPreviewCard');
   if (headers.length === 0 || selectedQuestions.length === 0) {
-    rCard.style.display = 'none';
+    hide(rCard);
     return;
   }
-  rCard.style.display = 'block';
+  show(rCard);
   document.getElementById('downloadBtn').disabled = selectedQuestions.length === 0;
 
   const grpData = groupRowsCustom(rows, groups);
@@ -1082,13 +707,13 @@ function render() {
       const allOpts = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
 
       let html = `<div class="result-item">`;
-      html += `<h4>${escapeHtml(title)} <span class="type-tag">${isMulti ? '多选' : '单选'}</span></h4>`;
+      html += `<h4>${title} <span class="type-tag">${isMulti ? '多选' : '单选'}</span></h4>`;
       html += `<table><thead><tr><th>选项</th><th class="center">次数</th><th class="center">占比</th></tr></thead><tbody>`;
       html += `<tr class="base-row"><td>base</td><td class="center">${totalUsers}</td><td class="center">100%</td></tr>`;
       for (const opt of allOpts) {
         const val = counts[opt] || 0;
         const pct = totalUsers > 0 ? r3(val / totalUsers * 100) : 0;
-        html += `<tr><td>${escapeHtml(opt)}</td><td class="center">${val}</td><td class="center">${pct}%</td></tr>`;
+        html += `<tr><td>${opt}</td><td class="center">${val}</td><td class="center">${pct}%</td></tr>`;
       }
       const meanVal = calcNumericMean(rows, colIdx);
       if (meanVal !== null) {
@@ -1119,9 +744,9 @@ function render() {
       const allOpts = [...allOptsSet].sort((a, b) => (allOptsCount[b] || 0) - (allOptsCount[a] || 0));
 
       let html = `<div class="result-item">`;
-      html += `<h4>${escapeHtml(title)} <span class="type-tag">${isMulti ? '多选' : '单选'}</span></h4>`;
+      html += `<h4>${title} <span class="type-tag">${isMulti ? '多选' : '单选'}</span></h4>`;
       html += `<div style="overflow-x:auto"><table><thead><tr><th>选项</th><th class="center">Total</th>`;
-      for (const g of orderedGroups) html += `<th class="center">${escapeHtml(g)}</th>`;
+      for (const g of orderedGroups) html += `<th class="center">${g}</th>`;
       html += `</tr></thead><tbody>`;
       html += `<tr class="base-row"><td>base</td><td class="center">${totalAllUsers}</td>`;
       for (const g of orderedGroups) html += `<td class="center">${groupUsers[g] || 0}</td>`;
@@ -1129,7 +754,7 @@ function render() {
       for (const opt of allOpts) {
         const totalVal = totalCounts[opt] || 0;
         const totalPct = totalAllUsers > 0 ? r3(totalVal / totalAllUsers * 100) : 0;
-        html += `<tr><td>${escapeHtml(opt)}</td><td class="center">${totalPct}%</td>`;
+        html += `<tr><td>${opt}</td><td class="center">${totalPct}%</td>`;
         for (const g of orderedGroups) {
           const val = groupCounts[g][opt] || 0;
           const total = groupUsers[g] || 0;
@@ -1144,6 +769,20 @@ function render() {
   }
 
   document.getElementById('previewList').innerHTML = previewHTML.join('') || '<div class="empty-state">请先上传 Excel 文件并选择题目</div>';
+}
+
+function renderSelectedGroups() {
+  const container = document.getElementById('selectedGroups');
+  if (!container) return;
+  container.innerHTML = groups.map((g, i) => `
+    <div class="group-tag selected" draggable="true"
+         ondragstart="handleGroupDragStart(event, ${i})"
+         ondragover="handleGroupDragOver(event, ${i})"
+         ondragend="handleGroupDragEnd(event)">
+      <span class="drag-handle">⋮⋮</span>
+      <span>${g.name}</span>
+    </div>
+  `).join('');
 }
 
 // ==================== CONFIG ====================
