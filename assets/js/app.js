@@ -284,7 +284,7 @@ function generateExcelWorkbook() {
     // Set column widths
     const colWidths = [];
     if (!hasGroups) {
-      colWidths.push({ width: 18 }, { width: 10 }, { width: 10 }, { width: 1 }, { width: 18 }, { width: 10 }, { width: 10 }, { width: 1 }, { width: 18 }, { width: 10 }, { width: 10 });
+      colWidths.push({ width: 1 }, { width: 18 }, { width: 10 }, { width: 1 }, { width: 18 }, { width: 10 }, { width: 1 }, { width: 18 }, { width: 10 });
     } else {
       // 3 tables each with (option + Total + numGroups groups), separated by spacers
       // Total cols = 3*(numGroups+2) + 2 spacers = 3*numGroups + 8
@@ -312,21 +312,46 @@ function generateExcelWorkbook() {
       const title = getShortTitle(header);
       const isMulti = isMultiChoice(rows, colIdx);
 
-      // Title row
-      const titleRow = ws.addRow([title]);
-      titleRow.getCell(1).font = { name: '黑体', size: 14 };
-      titleRow.getCell(1).alignment = { horizontal: 'left' };
-
-      // Subtitle row
-      const subRow = ws.addRow([`题目: ${title} (${isMulti ? '多选' : '单选'})`]);
-      subRow.getCell(1).font = { name: '黑体', size: 9 };
-      subRow.getCell(1).alignment = { horizontal: 'left' };
+      // Title row (above each of the 3 tables)
+      if (!hasGroups) {
+        const t1 = { opt: 2, tot: 3 };
+        const t2 = { opt: 6, tot: 7 };
+        const t3 = { opt: 10, tot: 11 };
+        for (const t of [t1, t2, t3]) {
+          const tr = ws.addRow();
+          const cell = tr.getCell(t.opt);
+          cell.value = title;
+          cell.font = { name: '黑体', size: 14 };
+          cell.alignment = { horizontal: 'left' };
+          const sr = ws.addRow();
+          const sc = sr.getCell(t.opt);
+          sc.value = `题目: ${title} (${isMulti ? '多选' : '单选'})`;
+          sc.font = { name: '黑体', size: 9 };
+          sc.alignment = { horizontal: 'left' };
+        }
+      } else {
+        // With groups: title spans full table width
+        for (let table = 0; table < 3; table++) {
+          const tableStart = 1 + table * (numGroups + 3);
+          const tr = ws.addRow();
+          const cell = tr.getCell(tableStart);
+          cell.value = title;
+          cell.font = { name: '黑体', size: 14 };
+          cell.alignment = { horizontal: 'left' };
+          const sr = ws.addRow();
+          const sc = sr.getCell(tableStart);
+          sc.value = `题目: ${title} (${isMulti ? '多选' : '单选'})`;
+          sc.font = { name: '黑体', size: 9 };
+          sc.alignment = { horizontal: 'left' };
+        }
+      }
 
       if (!hasGroups) {
-        // No groups: 3 side-by-side tables. No highlighting since no group columns to compare.
-        const t1 = { opt: 0, tot: 1 };
-        const t2 = { opt: 4, tot: 5 };
-        const t3 = { opt: 8, tot: 9 };
+        // No groups: 3 side-by-side tables with spacer cols at col 1, 5, 9 (0-indexed)
+        // col layout: [spacer] | B(opt) C(Total) | [spacer] | F(opt) G(Total) | [spacer] | J(opt) K(Total)
+        const t1 = { opt: 2, tot: 3 };
+        const t2 = { opt: 6, tot: 7 };
+        const t3 = { opt: 10, tot: 11 };
 
         const counts = countOptions(rows, colIdx, isMulti);
         const totalUsers = countUsers(rows, colIdx);
@@ -335,19 +360,18 @@ function generateExcelWorkbook() {
         // Header row
         const hRow = ws.addRow();
         for (const t of [t1, t2, t3]) {
-          const c1 = hRow.getCell(t.opt + 1); c1.value = '选项'; c1.style = makeHeaderStyle('left');
-          const c2 = hRow.getCell(t.tot + 1); c2.value = 'Total'; c2.style = makeHeaderStyle('center');
+          hRow.getCell(t.opt).value = '选项'; hRow.getCell(t.opt).style = makeHeaderStyle('left');
+          hRow.getCell(t.tot).value = 'Total'; hRow.getCell(t.tot).style = makeHeaderStyle('center');
         }
 
         // Base row
         const bRow = ws.addRow();
         for (const t of [t1, t2, t3]) {
-          const c1 = bRow.getCell(t.opt + 1); c1.value = 'base'; c1.style = makeDataStyle('left');
-          const c2 = bRow.getCell(t.tot + 1); c2.value = totalUsers; c2.style = makeDataStyle('center');
+          bRow.getCell(t.opt).value = 'base'; bRow.getCell(t.opt).style = makeDataStyle('left');
+          bRow.getCell(t.tot).value = totalUsers; bRow.getCell(t.tot).style = makeDataStyle('center');
         }
 
         // Data rows
-        // Precompute pcts for highlighting across all options
         const pctByOpt = allOpts.map(opt => {
           const val = counts[opt] || 0;
           return totalUsers > 0 ? r3(val / totalUsers) : 0;
@@ -362,19 +386,19 @@ function generateExcelWorkbook() {
 
           const dRow = ws.addRow();
           // Table 1: counts
-          dRow.getCell(t1.opt + 1).value = opt; dRow.getCell(t1.opt + 1).style = makeDataStyle('left');
-          dRow.getCell(t1.tot + 1).value = val; dRow.getCell(t1.tot + 1).style = makeDataStyle('center');
+          dRow.getCell(t1.opt).value = opt; dRow.getCell(t1.opt).style = makeDataStyle('left');
+          dRow.getCell(t1.tot).value = val; dRow.getCell(t1.tot).style = makeDataStyle('center');
 
           // Table 2: pct (no highlight)
-          dRow.getCell(t2.opt + 1).value = opt; dRow.getCell(t2.opt + 1).style = makeDataStyle('left');
-          dRow.getCell(t2.tot + 1).value = pct; dRow.getCell(t2.tot + 1).style = makeDataStyle('center', '0.0%');
+          dRow.getCell(t2.opt).value = opt; dRow.getCell(t2.opt).style = makeDataStyle('left');
+          dRow.getCell(t2.tot).value = pct; dRow.getCell(t2.tot).style = makeDataStyle('center', '0.0%');
 
           // Table 3: pct with highlight
-          dRow.getCell(t3.opt + 1).value = opt; dRow.getCell(t3.opt + 1).style = makeDataStyle('left');
-          if (pct === maxPct && maxPct > 0) dRow.getCell(t3.tot + 1).style = makeFillStyle(GREEN_FILL, 'center', '0.0%');
-          else if (pct === minPct && minPct > 0 && maxPct !== minPct) dRow.getCell(t3.tot + 1).style = makeFillStyle(RED_FILL, 'center', '0.0%');
-          else dRow.getCell(t3.tot + 1).style = makeDataStyle('center', '0.0%');
-          dRow.getCell(t3.tot + 1).value = pct;
+          dRow.getCell(t3.opt).value = opt; dRow.getCell(t3.opt).style = makeDataStyle('left');
+          if (pct === maxPct && maxPct > 0) dRow.getCell(t3.tot).style = makeFillStyle(GREEN_FILL, 'center', '0.0%');
+          else if (pct === minPct && minPct > 0 && maxPct !== minPct) dRow.getCell(t3.tot).style = makeFillStyle(RED_FILL, 'center', '0.0%');
+          else dRow.getCell(t3.tot).style = makeDataStyle('center', '0.0%');
+          dRow.getCell(t3.tot).value = pct;
         }
 
         // Mean row
@@ -382,8 +406,8 @@ function generateExcelWorkbook() {
         if (meanVal !== null) {
           const mRow = ws.addRow();
           for (const t of [t1, t2, t3]) {
-            const c1 = mRow.getCell(t.opt + 1); c1.value = '平均值'; c1.style = makeDataStyle('left');
-            const c2 = mRow.getCell(t.tot + 1); c2.value = meanVal; c2.style = makeDataStyle('center', '0.0');
+            mRow.getCell(t.opt).value = '平均值'; mRow.getCell(t.opt).style = makeDataStyle('left');
+            mRow.getCell(t.tot).value = meanVal; mRow.getCell(t.tot).style = makeDataStyle('center', '0.0');
           }
         }
 
@@ -416,15 +440,19 @@ function generateExcelWorkbook() {
         // Header row
         const hRow = ws.addRow();
         let cellIdx = 1;
-        // Table 1
+        // Table 1: opt, Total, groups
         hRow.getCell(cellIdx++).value = '选项'; hRow.getCell(cellIdx - 1).style = makeHeaderStyle('left');
         hRow.getCell(cellIdx++).value = 'Total'; hRow.getCell(cellIdx - 1).style = makeHeaderStyle('center');
         for (let i = 0; i < numGroups; i++) { hRow.getCell(cellIdx++).value = orderedGroups[i]; hRow.getCell(cellIdx - 1).style = makeHeaderStyle('center'); }
-        // Table 2
+        // Spacer after table 1
+        cellIdx++;
+        // Table 2: opt, Total, groups
         hRow.getCell(cellIdx++).value = '选项'; hRow.getCell(cellIdx - 1).style = makeHeaderStyle('left');
         hRow.getCell(cellIdx++).value = 'Total'; hRow.getCell(cellIdx - 1).style = makeHeaderStyle('center');
         for (let i = 0; i < numGroups; i++) { hRow.getCell(cellIdx++).value = orderedGroups[i]; hRow.getCell(cellIdx - 1).style = makeHeaderStyle('center'); }
-        // Table 3
+        // Spacer after table 2
+        cellIdx++;
+        // Table 3: opt, Total, groups
         hRow.getCell(cellIdx++).value = '选项'; hRow.getCell(cellIdx - 1).style = makeHeaderStyle('left');
         hRow.getCell(cellIdx++).value = 'Total'; hRow.getCell(cellIdx - 1).style = makeHeaderStyle('center');
         for (let i = 0; i < numGroups; i++) { hRow.getCell(cellIdx++).value = orderedGroups[i]; hRow.getCell(cellIdx - 1).style = makeHeaderStyle('center'); }
@@ -435,10 +463,12 @@ function generateExcelWorkbook() {
         bRow.getCell(cellIdx++).value = 'base'; bRow.getCell(cellIdx - 1).style = makeDataStyle('left');
         bRow.getCell(cellIdx++).value = totalAllUsers; bRow.getCell(cellIdx - 1).style = makeDataStyle('center');
         for (let i = 0; i < numGroups; i++) { bRow.getCell(cellIdx++).value = groupUsers[orderedGroups[i]] || 0; bRow.getCell(cellIdx - 1).style = makeDataStyle('center'); }
+        cellIdx++; // spacer
         for (let t = 0; t < 2; t++) {
           bRow.getCell(cellIdx++).value = 'base'; bRow.getCell(cellIdx - 1).style = makeDataStyle('left');
           bRow.getCell(cellIdx++).value = totalAllUsers; bRow.getCell(cellIdx - 1).style = makeDataStyle('center');
           for (let i = 0; i < numGroups; i++) { bRow.getCell(cellIdx++).value = groupUsers[orderedGroups[i]] || 0; bRow.getCell(cellIdx - 1).style = makeDataStyle('center'); }
+          if (t < 1) cellIdx++; // spacer between tables
         }
 
         // Data rows
@@ -457,15 +487,19 @@ function generateExcelWorkbook() {
 
           const dRow = ws.addRow();
           cellIdx = 1;
-          // Table 1: counts
+          // Table 1: opt, totalVal, groups (counts)
           dRow.getCell(cellIdx++).value = opt; dRow.getCell(cellIdx - 1).style = makeDataStyle('left');
           dRow.getCell(cellIdx++).value = totalVal; dRow.getCell(cellIdx - 1).style = makeDataStyle('center');
           for (let i = 0; i < numGroups; i++) { dRow.getCell(cellIdx++).value = groupCounts[orderedGroups[i]][opt] || 0; dRow.getCell(cellIdx - 1).style = makeDataStyle('center'); }
-          // Table 2: pct no highlight
+          // Spacer
+          cellIdx++;
+          // Table 2: opt, totalPct, groups (pct, no highlight)
           dRow.getCell(cellIdx++).value = opt; dRow.getCell(cellIdx - 1).style = makeDataStyle('left');
           dRow.getCell(cellIdx++).value = totalPct; dRow.getCell(cellIdx - 1).style = makeDataStyle('center', '0.0%');
           for (let i = 0; i < numGroups; i++) { dRow.getCell(cellIdx++).value = pcts[orderedGroups[i]]; dRow.getCell(cellIdx - 1).style = makeDataStyle('center', '0.0%'); }
-          // Table 3: pct with highlight - only group cols, no highlight on Total
+          // Spacer
+          cellIdx++;
+          // Table 3: opt, totalPct, groups (pct with highlight)
           dRow.getCell(cellIdx++).value = opt; dRow.getCell(cellIdx - 1).style = makeDataStyle('left');
           dRow.getCell(cellIdx++).value = totalPct; dRow.getCell(cellIdx - 1).style = makeDataStyle('center', '0.0%');
           for (let i = 0; i < numGroups; i++) {
@@ -498,10 +532,12 @@ function generateExcelWorkbook() {
         mRow.getCell(cellIdx++).value = '平均值'; mRow.getCell(cellIdx - 1).style = makeDataStyle('left');
         mRow.getCell(cellIdx++).value = totalMean; mRow.getCell(cellIdx - 1).style = makeDataStyle('center', totalMean !== null ? '0.0' : '@');
         for (let i = 0; i < numGroups; i++) { const m = means[orderedGroups[i]]; mRow.getCell(cellIdx++).value = m; mRow.getCell(cellIdx - 1).style = makeDataStyle('center', m !== null ? '0.0' : '@'); }
+        cellIdx++; // spacer
         // Table 2
         mRow.getCell(cellIdx++).value = '平均值'; mRow.getCell(cellIdx - 1).style = makeDataStyle('left');
         mRow.getCell(cellIdx++).value = totalMean; mRow.getCell(cellIdx - 1).style = makeDataStyle('center', totalMean !== null ? '0.0' : '@');
         for (let i = 0; i < numGroups; i++) { const m = means[orderedGroups[i]]; mRow.getCell(cellIdx++).value = m; mRow.getCell(cellIdx - 1).style = makeDataStyle('center', m !== null ? '0.0' : '@'); }
+        cellIdx++; // spacer
         // Table 3: only group cols get highlighted, Total stays normal
         mRow.getCell(cellIdx++).value = '平均值'; mRow.getCell(cellIdx - 1).style = makeDataStyle('left');
         mRow.getCell(cellIdx++).value = totalMean; mRow.getCell(cellIdx - 1).style = makeDataStyle('center', totalMean !== null ? '0.0' : '@');
