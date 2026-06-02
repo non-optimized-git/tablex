@@ -28,19 +28,6 @@ function prefixSimilarity(a, b) {
   return i / Math.max(a.length, b.length);
 }
 
-function buildSheets(questions) {
-  // Always produce 1 sheet per question — sheet grouping is handled by the caller
-  // by passing individual questions one at a time.
-  if (!questions.length) return [];
-  return questions.map(q => [q]);
-}
-
-function estimateRows(colIdx) {
-  const isMulti = isMultiChoice(rows, colIdx);
-  const opts = Object.keys(countOptions(rows, colIdx, isMulti));
-  return 3 + opts.length + (calcNumericMean(rows, colIdx) !== null ? 1 : 0);
-}
-
 function partitionSheets(questions, maxSheets) {
   // Evenly distribute questions across maxSheets while preserving order.
   if (questions.length <= maxSheets) {
@@ -179,34 +166,6 @@ function isMultiChoice(allRows, colIdx) {
   return total > 0 && hasEnglishComma > total * 0.2;
 }
 
-function extractMidValue(opt) {
-  if (!opt) return null;
-  const s = String(opt);
-  let m = s.match(/^(\d+)岁以下/);
-  if (m) return parseInt(m[1]);
-  m = s.match(/^(\d+)岁以上/);
-  if (m) return parseInt(m[1]);
-  m = s.match(/^(\d+)-(\d+)/);
-  if (m) return (parseInt(m[1]) + parseInt(m[2])) / 2;
-  return null;
-}
-
-function calcNumericMean(allRows, colIdx) {
-  let total = 0, sum = 0;
-  for (const row of allRows) {
-    const val = row[colIdx];
-    if (val === null || val === undefined) continue;
-    const strVal = String(val).trim();
-    if (!strVal) continue;
-    const mid = extractMidValue(strVal);
-    if (mid !== null) {
-      total++;
-      sum += mid;
-    }
-  }
-  return total > 0 ? sum / total : null;
-}
-
 function r3(x) {
   if (x === null || x === undefined) return null;
   return Math.abs(x) < 0.0005 ? 0 : Math.round(x * 1000) / 1000;
@@ -235,16 +194,6 @@ function makeFillStyle(color, align, numFmt) {
   const s = { font: { name: '黑体', size: 11 }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: color } }, alignment: { horizontal: align }, border: makeBorder() };
   if (numFmt) s.numFmt = numFmt;
   return s;
-}
-
-function colNumToLetter(num) {
-  let result = '';
-  while (num > 0) {
-    const rem = (num - 1) % 26;
-    result = String.fromCharCode(65 + rem) + result;
-    num = Math.floor((num - 1) / 26);
-  }
-  return result;
 }
 
 function generateExcelWorkbook() {
