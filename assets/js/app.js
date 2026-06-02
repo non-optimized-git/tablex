@@ -152,7 +152,8 @@ function countOptions(allRows, colIdx, isMulti) {
   for (const row of allRows) {
     const val = safe(row[colIdx]);
     if (val === null) continue;
-    if (isMulti) {
+    // Always split by English comma (regardless of isMulti) if comma present
+    if (String(val).includes(',')) {
       for (const opt of splitOpts(val)) {
         counts[opt] = (counts[opt] || 0) + 1;
       }
@@ -168,14 +169,14 @@ function countUsers(allRows, colIdx) {
 }
 
 function isMultiChoice(allRows, colIdx) {
-  let total = 0, hasComma = 0;
+  let total = 0, hasEnglishComma = 0;
   for (const row of allRows) {
     const val = row[colIdx];
     if (val === null || val === undefined) continue;
     total++;
-    if (String(val).includes(',')) hasComma++;
+    if (String(val).includes(',')) hasEnglishComma++;
   }
-  return total > 0 && hasComma > total * 0.2;
+  return total > 0 && hasEnglishComma > total * 0.2;
 }
 
 function extractMidValue(opt) {
@@ -312,37 +313,40 @@ function generateExcelWorkbook() {
       const title = getShortTitle(header);
       const isMulti = isMultiChoice(rows, colIdx);
 
-      // Title row (above each of the 3 tables)
+      // Title row: 题干 in row 1, 题目 in row 2 — each table gets its own cell
+      const titleRow = ws.addRow();
+      const subRow = ws.addRow();
       if (!hasGroups) {
         const t1 = { opt: 2, tot: 3 };
         const t2 = { opt: 6, tot: 7 };
         const t3 = { opt: 10, tot: 11 };
-        for (const t of [t1, t2, t3]) {
-          const tr = ws.addRow();
-          const cell = tr.getCell(t.opt);
+        const tables = [t1, t2, t3];
+        // Row 1: 题干
+        for (const t of tables) {
+          const cell = titleRow.getCell(t.opt);
           cell.value = title;
           cell.font = { name: '黑体', size: 14 };
           cell.alignment = { horizontal: 'left' };
-          const sr = ws.addRow();
-          const sc = sr.getCell(t.opt);
-          sc.value = `题目: ${title} (${isMulti ? '多选' : '单选'})`;
-          sc.font = { name: '黑体', size: 9 };
-          sc.alignment = { horizontal: 'left' };
+        }
+        // Row 2: 题目 info
+        for (const t of tables) {
+          const cell = subRow.getCell(t.opt);
+          cell.value = `题目: ${title} (${isMulti ? '多选' : '单选'})`;
+          cell.font = { name: '黑体', size: 9 };
+          cell.alignment = { horizontal: 'left' };
         }
       } else {
-        // With groups: title spans full table width
         for (let table = 0; table < 3; table++) {
           const tableStart = 1 + table * (numGroups + 3);
-          const tr = ws.addRow();
-          const cell = tr.getCell(tableStart);
-          cell.value = title;
-          cell.font = { name: '黑体', size: 14 };
-          cell.alignment = { horizontal: 'left' };
-          const sr = ws.addRow();
-          const sc = sr.getCell(tableStart);
-          sc.value = `题目: ${title} (${isMulti ? '多选' : '单选'})`;
-          sc.font = { name: '黑体', size: 9 };
-          sc.alignment = { horizontal: 'left' };
+          const titleCell = titleRow.getCell(tableStart);
+          titleCell.value = title;
+          titleCell.font = { name: '黑体', size: 14 };
+          titleCell.alignment = { horizontal: 'left' };
+
+          const subCell = subRow.getCell(tableStart);
+          subCell.value = `题目: ${title} (${isMulti ? '多选' : '单选'})`;
+          subCell.font = { name: '黑体', size: 9 };
+          subCell.alignment = { horizontal: 'left' };
         }
       }
 
@@ -364,11 +368,11 @@ function generateExcelWorkbook() {
           hRow.getCell(t.tot).value = 'Total'; hRow.getCell(t.tot).style = makeHeaderStyle('center');
         }
 
-        // Base row
+        // Base row (italic)
         const bRow = ws.addRow();
         for (const t of [t1, t2, t3]) {
-          bRow.getCell(t.opt).value = 'base'; bRow.getCell(t.opt).style = makeDataStyle('left');
-          bRow.getCell(t.tot).value = totalUsers; bRow.getCell(t.tot).style = makeDataStyle('center');
+          const c1 = bRow.getCell(t.opt); c1.value = 'base'; c1.style = makeDataStyle('left'); c1.font = { name: '黑体', size: 11, italic: true };
+          const c2 = bRow.getCell(t.tot); c2.value = totalUsers; c2.style = makeDataStyle('center'); c2.font = { name: '黑体', size: 11, italic: true };
         }
 
         // Data rows
@@ -393,23 +397,19 @@ function generateExcelWorkbook() {
           dRow.getCell(t2.opt).value = opt; dRow.getCell(t2.opt).style = makeDataStyle('left');
           dRow.getCell(t2.tot).value = pct; dRow.getCell(t2.tot).style = makeDataStyle('center', '0.0%');
 
-          // Table 3: pct with highlight
+          // Table 3: pct with highlight (red=highest, green=lowest, only if distinct)
           dRow.getCell(t3.opt).value = opt; dRow.getCell(t3.opt).style = makeDataStyle('left');
-          if (pct === maxPct && maxPct > 0) dRow.getCell(t3.tot).style = makeFillStyle(GREEN_FILL, 'center', '0.0%');
-          else if (pct === minPct && minPct > 0 && maxPct !== minPct) dRow.getCell(t3.tot).style = makeFillStyle(RED_FILL, 'center', '0.0%');
-          else dRow.getCell(t3.tot).style = makeDataStyle('center', '0.0%');
+          if (maxPct !== minPct) {
+            if (pct === maxPct) dRow.getCell(t3.tot).style = makeFillStyle(GREEN_FILL, 'center', '0.0%');
+            else if (pct === minPct) dRow.getCell(t3.tot).style = makeFillStyle(RED_FILL, 'center', '0.0%');
+            else dRow.getCell(t3.tot).style = makeDataStyle('center', '0.0%');
+          } else {
+            dRow.getCell(t3.tot).style = makeDataStyle('center', '0.0%');
+          }
           dRow.getCell(t3.tot).value = pct;
         }
 
-        // Mean row
-        const meanVal = calcNumericMean(rows, colIdx);
-        if (meanVal !== null) {
-          const mRow = ws.addRow();
-          for (const t of [t1, t2, t3]) {
-            mRow.getCell(t.opt).value = '平均值'; mRow.getCell(t.opt).style = makeDataStyle('left');
-            mRow.getCell(t.tot).value = meanVal; mRow.getCell(t.tot).style = makeDataStyle('center', '0.0');
-          }
-        }
+        // No mean row
 
       } else {
         // With groups: 3 tables of (选项, Total, groups...)
@@ -460,14 +460,16 @@ function generateExcelWorkbook() {
         // Base row
         const bRow = ws.addRow();
         cellIdx = 1;
-        bRow.getCell(cellIdx++).value = 'base'; bRow.getCell(cellIdx - 1).style = makeDataStyle('left');
-        bRow.getCell(cellIdx++).value = totalAllUsers; bRow.getCell(cellIdx - 1).style = makeDataStyle('center');
-        for (let i = 0; i < numGroups; i++) { bRow.getCell(cellIdx++).value = groupUsers[orderedGroups[i]] || 0; bRow.getCell(cellIdx - 1).style = makeDataStyle('center'); }
+        const applyBaseStyle = (cell, value) => { cell.value = value; cell.style = makeDataStyle('center'); cell.font = { name: '黑体', size: 11, italic: true }; };
+        const applyBaseStyleLeft = (cell, value) => { cell.value = value; cell.style = makeDataStyle('left'); cell.font = { name: '黑体', size: 11, italic: true }; };
+        applyBaseStyleLeft(bRow.getCell(cellIdx++), 'base');
+        applyBaseStyle(bRow.getCell(cellIdx++), totalAllUsers);
+        for (let i = 0; i < numGroups; i++) { applyBaseStyle(bRow.getCell(cellIdx++), groupUsers[orderedGroups[i]] || 0); }
         cellIdx++; // spacer
         for (let t = 0; t < 2; t++) {
-          bRow.getCell(cellIdx++).value = 'base'; bRow.getCell(cellIdx - 1).style = makeDataStyle('left');
-          bRow.getCell(cellIdx++).value = totalAllUsers; bRow.getCell(cellIdx - 1).style = makeDataStyle('center');
-          for (let i = 0; i < numGroups; i++) { bRow.getCell(cellIdx++).value = groupUsers[orderedGroups[i]] || 0; bRow.getCell(cellIdx - 1).style = makeDataStyle('center'); }
+          applyBaseStyleLeft(bRow.getCell(cellIdx++), 'base');
+          applyBaseStyle(bRow.getCell(cellIdx++), totalAllUsers);
+          for (let i = 0; i < numGroups; i++) { applyBaseStyle(bRow.getCell(cellIdx++), groupUsers[orderedGroups[i]] || 0); }
           if (t < 1) cellIdx++; // spacer between tables
         }
 
@@ -505,52 +507,18 @@ function generateExcelWorkbook() {
           for (let i = 0; i < numGroups; i++) {
             const g = orderedGroups[i];
             const cellPct = pcts[g];
-            if (cellPct === maxPct && maxPct > 0) dRow.getCell(cellIdx++).style = makeFillStyle(RED_FILL, 'center', '0.0%');
-            else if (cellPct === minPct && minPct > 0 && maxPct !== minPct) dRow.getCell(cellIdx++).style = makeFillStyle(GREEN_FILL, 'center', '0.0%');
-            else dRow.getCell(cellIdx++).style = makeDataStyle('center', '0.0%');
+            if (maxPct !== minPct) {
+              if (cellPct === maxPct) dRow.getCell(cellIdx++).style = makeFillStyle(GREEN_FILL, 'center', '0.0%');
+              else if (cellPct === minPct) dRow.getCell(cellIdx++).style = makeFillStyle(RED_FILL, 'center', '0.0%');
+              else dRow.getCell(cellIdx++).style = makeDataStyle('center', '0.0%');
+            } else {
+              dRow.getCell(cellIdx++).style = makeDataStyle('center', '0.0%');
+            }
             dRow.getCell(cellIdx - 1).value = cellPct;
           }
         }
 
-        // Mean row
-        const means = {};
-        for (const g of orderedGroups) {
-          means[g] = calcNumericMean(grpData[g], colIdx);
-        }
-        const totalMean = calcNumericMean(rows, colIdx);
-        const validMeans = {};
-        for (const [g, m] of Object.entries(means)) {
-          if (m !== null) validMeans[g] = m;
-        }
-        if (totalMean !== null) validMeans['Total'] = totalMean;
-        const maxM = Object.values(validMeans).length > 0 ? Math.max(...Object.values(validMeans)) : null;
-        const minM = Object.values(validMeans).length > 0 ? Math.min(...Object.values(validMeans)) : null;
-
-        const mRow = ws.addRow();
-        cellIdx = 1;
-        // Table 1
-        mRow.getCell(cellIdx++).value = '平均值'; mRow.getCell(cellIdx - 1).style = makeDataStyle('left');
-        mRow.getCell(cellIdx++).value = totalMean; mRow.getCell(cellIdx - 1).style = makeDataStyle('center', totalMean !== null ? '0.0' : '@');
-        for (let i = 0; i < numGroups; i++) { const m = means[orderedGroups[i]]; mRow.getCell(cellIdx++).value = m; mRow.getCell(cellIdx - 1).style = makeDataStyle('center', m !== null ? '0.0' : '@'); }
-        cellIdx++; // spacer
-        // Table 2
-        mRow.getCell(cellIdx++).value = '平均值'; mRow.getCell(cellIdx - 1).style = makeDataStyle('left');
-        mRow.getCell(cellIdx++).value = totalMean; mRow.getCell(cellIdx - 1).style = makeDataStyle('center', totalMean !== null ? '0.0' : '@');
-        for (let i = 0; i < numGroups; i++) { const m = means[orderedGroups[i]]; mRow.getCell(cellIdx++).value = m; mRow.getCell(cellIdx - 1).style = makeDataStyle('center', m !== null ? '0.0' : '@'); }
-        cellIdx++; // spacer
-        // Table 3: only group cols get highlighted, Total stays normal
-        mRow.getCell(cellIdx++).value = '平均值'; mRow.getCell(cellIdx - 1).style = makeDataStyle('left');
-        mRow.getCell(cellIdx++).value = totalMean; mRow.getCell(cellIdx - 1).style = makeDataStyle('center', totalMean !== null ? '0.0' : '@');
-        for (let i = 0; i < numGroups; i++) {
-          const g = orderedGroups[i];
-          const m = means[g];
-          if (m !== null && Object.keys(validMeans).length >= 2) {
-            if (m === maxM) mRow.getCell(cellIdx++).style = makeFillStyle(RED_FILL, 'center', '0.0');
-            else if (m === minM && maxM !== minM) mRow.getCell(cellIdx++).style = makeFillStyle(GREEN_FILL, 'center', '0.0');
-            else mRow.getCell(cellIdx++).style = makeDataStyle('center', '0.0');
-          } else { mRow.getCell(cellIdx++).style = makeDataStyle('center', '0.0'); }
-          mRow.getCell(cellIdx - 1).value = m;
-        }
+        // No mean row
       }
     }
   }
@@ -586,13 +554,28 @@ async function downloadExcel() {
 async function handleFile(file) {
   if (!file) return;
   try {
+    // Reset all state before loading new file
+    headers = [];
+    rows = [];
+    selectedQuestions = [];
+    groupingColIdx = null;
+    groups = [];
+    config = { groups: [], ordered: {}, mean_cols: {}, multi_idx: [] };
+    localStorage.removeItem('survey_analysis_config');
+
     const result = await parseExcel(file);
     headers = result.headers;
     rows = result.rows;
     selectedQuestions = headers.map((_, i) => i);
-    groupingColIdx = null;
-    groups = [];
+
+    // Update upload zone with file info
+    const uploadHint = document.getElementById('uploadHint');
+    if (uploadHint) {
+      uploadHint.textContent = `${file.name} (${rows.length} 行 × ${headers.length} 列)`;
+    }
+
     render();
+    // Only restore saved config if the saved grouping col still exists in the new file
     loadSavedConfig();
   } catch (err) {
     alert('读取文件失败: ' + err.message);
@@ -651,6 +634,10 @@ function handleGroupDragStart(e, idx) {
 function handleGroupDragOver(e, idx) {
   e.preventDefault();
   e.dataTransfer.dropEffect = 'move';
+  // Remove drag-over class from all items
+  document.querySelectorAll('.drag-over-target').forEach(el => el.classList.remove('drag-over-target'));
+  // Add drag-over class to hovered item
+  e.currentTarget.classList.add('drag-over-target');
   if (dragIdx === null || dragIdx === idx) return;
   const [removed] = groups.splice(dragIdx, 1);
   groups.splice(idx, 0, removed);
@@ -660,6 +647,7 @@ function handleGroupDragOver(e, idx) {
 
 function handleGroupDragEnd(e) {
   e.currentTarget.classList.remove('dragging-item');
+  document.querySelectorAll('.drag-over-target').forEach(el => el.classList.remove('drag-over-target'));
   dragIdx = null;
   saveConfig();
 }
@@ -677,12 +665,9 @@ function render() {
   const groupValuesContainer = document.getElementById('groupValuesContainer');
   const selectedGroupsContainer = document.getElementById('selectedGroupsContainer');
   const qCard = document.getElementById('questionSelectorCard');
-  const rCard = document.getElementById('resultPreviewCard');
-
   if (headers.length === 0) {
     hide(groupCard);
     hide(document.getElementById('questionSelectorCard'));
-    hide(document.getElementById('resultPreviewCard'));
     return;
   }
 
@@ -699,16 +684,20 @@ function render() {
     show(groupValuesContainer);
 
     const values = new Set();
+    const valueCounts = {};
     for (const row of rows) {
       const v = safe(row[groupingColIdx]);
-      if (v !== null) values.add(v);
+      if (v !== null) {
+        values.add(v);
+        valueCounts[v] = (valueCounts[v] || 0) + 1;
+      }
     }
     const sortedValues = [...values].sort();
     const selectedValues = groups.filter(g => g.conditions[0][0] === groupingColIdx).map(g => g.name);
 
     document.getElementById('groupValues').innerHTML = sortedValues.map(val => `
       <button class="group-tag ${selectedValues.includes(val) ? 'selected' : 'unselected'}"
-              onclick="toggleGroupValue('${val.replace(/'/g, "\\'")}')">${val}</button>
+              onclick="toggleGroupValue('${val.replace(/'/g, "\\'")}')">${val} <span style="opacity:0.6;font-size:11px">(${valueCounts[val]})</span></button>
     `).join('');
 
     if (groups.length > 0) {
@@ -725,116 +714,37 @@ function render() {
   }
   show(qCard);
 
-  const modules = {};
+  // Build flat list preserving original order, inserting module labels when topic changes
+  const questionItems = [];
+  let lastMod = null;
   for (let i = 0; i < headers.length; i++) {
     const mod = detectModule(headers[i]);
     const title = getShortTitle(headers[i]) || `列${i + 1}`;
     const isMulti = rows.length > 0 && isMultiChoice(rows, i);
-    if (!modules[mod]) modules[mod] = [];
-    modules[mod].push({ idx: i, title, isMulti });
+    if (mod !== lastMod) {
+      questionItems.push({ type: 'module', name: mod });
+      lastMod = mod;
+    }
+    questionItems.push({ type: 'question', idx: i, title, isMulti });
   }
 
   document.getElementById('questionCount').textContent = `已选择 ${selectedQuestions.length} / ${headers.length} 题`;
 
-  document.getElementById('questionList').innerHTML = Object.entries(modules).map(([modName, questions]) => `
-    <div class="question-module">
-      <h4>${modName}</h4>
-      ${questions.map(q => `
-        <label class="question-item">
-          <input type="checkbox" ${selectedQuestions.includes(q.idx) ? 'checked' : ''} onchange="toggleQuestion(${q.idx})">
-          <span>${q.title}</span>
-          <span class="type-tag">${q.isMulti ? '多选' : '单选'}</span>
-        </label>
-      `).join('')}
-    </div>
-  `).join('');
-
-  if (headers.length === 0 || selectedQuestions.length === 0) {
-    hide(rCard);
-    return;
-  }
-  show(rCard);
-  document.getElementById('downloadBtn').disabled = selectedQuestions.length === 0;
-
-  const grpData = groupRowsCustom(rows, groups);
-  const orderedGroups = groups.map(g => g.name);
-  const hasGroups = orderedGroups.length > 0;
-
-  const previewHTML = [];
-
-  for (const colIdx of selectedQuestions) {
-    const header = headers[colIdx] || `列${colIdx}`;
-    const title = getShortTitle(header);
-    const isMulti = isMultiChoice(rows, colIdx);
-
-    if (!hasGroups) {
-      const counts = countOptions(rows, colIdx, isMulti);
-      const totalUsers = countUsers(rows, colIdx);
-      const allOpts = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
-
-      let html = `<div class="result-item">`;
-      html += `<h4>${title} <span class="type-tag">${isMulti ? '多选' : '单选'}</span></h4>`;
-      html += `<table><thead><tr><th>选项</th><th class="center">次数</th><th class="center">占比</th></tr></thead><tbody>`;
-      html += `<tr class="base-row"><td>base</td><td class="center">${totalUsers}</td><td class="center">100%</td></tr>`;
-      for (const opt of allOpts) {
-        const val = counts[opt] || 0;
-        const pct = totalUsers > 0 ? r3(val / totalUsers * 100) : 0;
-        html += `<tr><td>${opt}</td><td class="center">${val}</td><td class="center">${pct}%</td></tr>`;
-      }
-      const meanVal = calcNumericMean(rows, colIdx);
-      if (meanVal !== null) {
-        html += `<tr class="mean-row"><td>平均值</td><td class="center" colspan="2">${r3(meanVal)}</td></tr>`;
-      }
-      html += `</tbody></table></div>`;
-      previewHTML.push(html);
-    } else {
-      const groupCounts = {};
-      const groupUsers = {};
-      for (const g of orderedGroups) {
-        groupCounts[g] = countOptions(grpData[g], colIdx, isMulti);
-        groupUsers[g] = countUsers(grpData[g], colIdx);
-      }
-      const totalCounts = countOptions(rows, colIdx, isMulti);
-      const totalAllUsers = countUsers(rows, colIdx);
-
-      const allOptsSet = new Set();
-      for (const counts of Object.values(groupCounts)) {
-        for (const opt of Object.keys(counts)) allOptsSet.add(opt);
-      }
-      const allOptsCount = {};
-      for (const counts of Object.values(groupCounts)) {
-        for (const [opt, count] of Object.entries(counts)) {
-          allOptsCount[opt] = (allOptsCount[opt] || 0) + count;
-        }
-      }
-      const allOpts = [...allOptsSet].sort((a, b) => (allOptsCount[b] || 0) - (allOptsCount[a] || 0));
-
-      let html = `<div class="result-item">`;
-      html += `<h4>${title} <span class="type-tag">${isMulti ? '多选' : '单选'}</span></h4>`;
-      html += `<div style="overflow-x:auto"><table><thead><tr><th>选项</th><th class="center">Total</th>`;
-      for (const g of orderedGroups) html += `<th class="center">${g}</th>`;
-      html += `</tr></thead><tbody>`;
-      html += `<tr class="base-row"><td>base</td><td class="center">${totalAllUsers}</td>`;
-      for (const g of orderedGroups) html += `<td class="center">${groupUsers[g] || 0}</td>`;
-      html += `</tr>`;
-      for (const opt of allOpts) {
-        const totalVal = totalCounts[opt] || 0;
-        const totalPct = totalAllUsers > 0 ? r3(totalVal / totalAllUsers * 100) : 0;
-        html += `<tr><td>${opt}</td><td class="center">${totalPct}%</td>`;
-        for (const g of orderedGroups) {
-          const val = groupCounts[g][opt] || 0;
-          const total = groupUsers[g] || 0;
-          const pct = total > 0 ? r3(val / total * 100) : 0;
-          html += `<td class="center">${pct}%</td>`;
-        }
-        html += `</tr>`;
-      }
-      html += `</tbody></table></div></div>`;
-      previewHTML.push(html);
+  document.getElementById('questionList').innerHTML = questionItems.map((item, i) => {
+    if (item.type === 'module') {
+      const prev = questionItems[i - 1];
+      const close = prev && prev.type === 'question' ? '</div>' : '';
+      return `${close}<div class="question-module"><h4>${item.name}</h4>`;
     }
-  }
+    return `
+        <label class="question-item">
+          <input type="checkbox" ${selectedQuestions.includes(item.idx) ? 'checked' : ''} onchange="toggleQuestion(${item.idx})">
+          <span>${item.title}</span>
+          <span class="type-tag">${item.isMulti ? '多选' : '单选'}</span>
+        </label>`;
+  }).join('') + '</div>';
 
-  document.getElementById('previewList').innerHTML = previewHTML.join('') || '<div class="empty-state">请先上传 Excel 文件并选择题目</div>';
+  document.getElementById('downloadBtn').disabled = selectedQuestions.length === 0;
 }
 
 function renderSelectedGroups() {
@@ -862,9 +772,19 @@ function loadSavedConfig() {
     const saved = localStorage.getItem('survey_analysis_config');
     if (saved) {
       const data = JSON.parse(saved);
-      if (data.groups) groups = data.groups;
+      // Only restore grouping if the column index is still valid in the new file
+      if (data.groupingColIdx !== null && data.groupingColIdx !== undefined && data.groupingColIdx < headers.length) {
+        groupingColIdx = data.groupingColIdx;
+      } else {
+        groupingColIdx = null;
+      }
+      // Only restore groups if groupingColIdx is valid
+      if (groupingColIdx !== null && data.groups && Array.isArray(data.groups)) {
+        groups = data.groups;
+      } else {
+        groups = [];
+      }
       if (data.selectedQuestions) selectedQuestions = data.selectedQuestions;
-      if (data.groupingColIdx !== undefined) groupingColIdx = data.groupingColIdx;
       if (data.config) config = data.config;
       render();
     }

@@ -4,8 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TableX 表析</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
+<link rel="icon" href="data:,">
+<script src="assets/lib/xlsx.full.min.js"></script>
+<script src="assets/lib/exceljs.min.js"></script>
 <link rel="stylesheet" href="assets/css/styles.css">
 </head>
 <body>
@@ -46,8 +47,12 @@
       <option value="">-- 选择分组列 --</option>
     </select>
     <div id="groupValuesContainer" style="display:none">
-      <p class="label-text">选择分组并拖动排序：</p>
+      <p class="label-text">选择分组：</p>
       <div class="group-values" id="groupValues"></div>
+      <div id="selectedGroupsContainer" style="display:none; margin-top:12px">
+        <p class="label-text">已选分组（拖动排序）：</p>
+        <div class="group-values" id="selectedGroups"></div>
+      </div>
     </div>
   </div>
 
@@ -55,22 +60,13 @@
     <div class="result-header">
       <h3>题目选择</h3>
       <div>
+        <button class="btn btn-primary" id="downloadBtn" disabled>下载 Excel</button>
         <button class="select-all" id="selectAllBtn">全选</button>
         <button class="select-all" id="selectNoneBtn">全不选</button>
       </div>
     </div>
     <p class="label-text" id="questionCount">已选择 0 题</p>
     <div id="questionList"></div>
-  </div>
-
-  <div class="card" id="resultPreviewCard" style="display:none">
-    <div class="result-header">
-      <h3>结果预览</h3>
-      <button class="btn btn-primary" id="downloadBtn">下载 Excel</button>
-    </div>
-    <div class="preview-list" id="previewList">
-      <div class="empty-state">请先上传 Excel 文件并选择题目</div>
-    </div>
   </div>
 </main>
 

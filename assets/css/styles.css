@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+/* Inter font removed - using system fonts */
 
 * {
   box-sizing: border-box;
@@ -218,8 +218,9 @@ select:focus { border-color: var(--accent); }
   margin-top: 8px;
 }
 
-.drag-handle { cursor: grab; font-size: 12px; opacity: 0.5; }
+.drag-handle { cursor: grab; font-size: 12px; opacity: 0.8; color: white; }
 .dragging-item { opacity: 0.5; }
+.drag-over-target { outline: 2px dashed var(--accent) !important; background: var(--card) !important; }
 .drop-target { border: 2px dashed var(--accent) !important; background: #F5F0E8 !important; }
 
 .question-module { margin-bottom: 16px; }
