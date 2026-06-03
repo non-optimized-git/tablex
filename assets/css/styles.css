@@ -218,12 +218,12 @@ select:focus { border-color: var(--accent); }
   margin-top: 8px;
 }
 
-.drag-handle { cursor: grab; font-size: 12px; opacity: 0.8; color: white; }
+.drag-handle { cursor: grab; font-size: 16px; color: #333; font-weight: bold; }
 .dragging-item { opacity: 0.5; }
 .drag-over-target { outline: 2px dashed var(--accent) !important; background: var(--card) !important; }
 .drop-target { border: 2px dashed var(--accent) !important; background: #F5F0E8 !important; }
 
-.question-module { margin-bottom: 16px; }
+.question-module { margin-bottom: 12px; }
 
 .question-module h4 {
   font-size: 12px;
@@ -232,11 +232,83 @@ select:focus { border-color: var(--accent); }
   font-weight: 500;
 }
 
+.module-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  background: #E8E4DC;
+  color: #3D3D3D;
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+
+.module-name-input {
+  font-size: 13px;
+  font-weight: 500;
+  color: #3D3D3D;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 4px 8px;
+  background: transparent;
+  flex: 1;
+  font-family: 'Georgia', 'Times New Roman', serif;
+}
+
+.module-name-input:hover { border-color: #D5C8B5; }
+.module-name-input:focus { border-color: #8B7355; background: white; outline: none; }
+
+.module-btn {
+  padding: 4px 8px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+  border-radius: 4px;
+}
+
+.module-btn:hover { background: var(--bg); color: var(--text); }
+
+.module-delete-btn {
+  padding: 2px 6px;
+  border: none;
+  background: transparent;
+  color: #8B7355;
+  cursor: pointer;
+  font-size: 18px;
+  border-radius: 4px;
+  margin-left: auto;
+  line-height: 1;
+}
+
+.module-delete-btn:hover { background: #D5C8B5; color: #3D3D3D; }
+
+.add-module-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+  border-radius: 4px;
+  margin-left: 8px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.question-item:hover .add-module-btn { opacity: 1; }
+.add-module-btn:hover { border-color: var(--accent); color: var(--accent); background: #F5F0E8; }
+
 .question-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px;
+  padding: 6px 8px;
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.15s;
@@ -256,6 +328,9 @@ select:focus { border-color: var(--accent); }
   font-size: 11px;
   color: var(--muted);
   margin-left: auto;
+  padding: 2px 6px;
+  background: #F5F0E8;
+  border-radius: 4px;
 }
 
 .select-all {

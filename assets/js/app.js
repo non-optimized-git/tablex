@@ -5,6 +5,9 @@ let selectedQuestions = [];
 let groupingColIdx = null;
 let groups = [];
 let config = { groups: [], ordered: {}, mean_cols: {}, multi_idx: [] };
+// modules: [{id: number, name: string, questionIdxs: number[]}]
+let modules = [];
+let nextModuleId = 1;
 
 // ==================== CONSTANTS ====================
 const MODULE_KEYWORDS = {
@@ -14,34 +17,6 @@ const MODULE_KEYWORDS = {
   '家庭用车': ['家庭', '孩子', '家人', '空间'],
   '产品体验': ['满意度', '体验', '质量', '服务', '售后']
 };
-
-function getPrefix(header) {
-  if (!header) return '';
-  const cleaned = String(header).replace(/<[^>]*>/g, '').replace(/^[a-fA-F0-9]{6}">/, '').trim();
-  const match = cleaned.match(/^([A-Za-z]?\d+[.\-]?\d*|[A-Za-z]+\d+|[一-龥]+)/);
-  return match ? match[0] : cleaned.slice(0, 4);
-}
-
-function prefixSimilarity(a, b) {
-  let i = 0;
-  while (i < a.length && i < b.length && a[i] === b[i]) i++;
-  return i / Math.max(a.length, b.length);
-}
-
-function partitionSheets(questions, maxSheets) {
-  // Evenly distribute questions across maxSheets while preserving order.
-  if (questions.length <= maxSheets) {
-    return questions.map(q => [q]);
-  }
-  const perSheet = Math.ceil(questions.length / maxSheets);
-  const sheets = [];
-  for (let i = 0; i < maxSheets; i++) {
-    const start = i * perSheet;
-    if (start >= questions.length) break;
-    sheets.push(questions.slice(start, start + perSheet));
-  }
-  return sheets;
-}
 
 function detectModule(header) {
   if (!header) return '其他';
@@ -200,9 +175,7 @@ function generateExcelWorkbook() {
   const questions = selectedQuestions;
   if (!questions.length || !headers.length || !rows.length) return null;
 
-  console.log('>>> generateExcelWorkbook START. groups length:', groups.length);
   const orderedGroups = groups.map(g => g.name);
-  console.log('>>> orderedGroups:', orderedGroups);
   const numGroups = orderedGroups.length;
   const hasGroups = numGroups > 0;
 
@@ -213,14 +186,13 @@ function generateExcelWorkbook() {
   wb.creator = 'TableX';
   wb.created = new Date();
 
-  // Build sheets preserving order, max 10 sheets
-  const sheetGroups = partitionSheets(questions, 10);
-  console.log('sheetGroups count:', sheetGroups.length, 'from', questions.length, 'questions');
+  // Build sheets per module
+  for (const mod of modules) {
+    const modQuestions = mod.questionIdxs.filter(idx => selectedQuestions.includes(idx));
+    if (modQuestions.length === 0) continue;
 
-  for (const groupIndices of sheetGroups) {
-    const firstHeader = headers[groupIndices[0]] || `列${groupIndices[0]}`;
-    const rawName = getPrefix(firstHeader).slice(0, 31) || '题目';
-    let safeName = rawName.replace(/[\[\]:\\/?*]/g, '_').replace(/\|/g, '_');
+    const rawName = mod.name || '题目';
+    let safeName = rawName.replace(/[\[\]:\\/?*]/g, '_').replace(/\|/g, '_').slice(0, 31) || '题目';
     // Ensure unique sheet name
     let idx = 1;
     const usedSheets = wb.worksheets.map(ws => ws.name);
@@ -228,13 +200,20 @@ function generateExcelWorkbook() {
       safeName = rawName.replace(/[\[\]:\\/?*]/g, '_').replace(/\|/g, '_').slice(0, 28) + '_' + idx;
       idx++;
     }
-    console.log('sheet:', safeName, 'questions:', groupIndices.length);
     const ws = wb.addWorksheet(safeName);
 
     // Set column widths
     const colWidths = [];
     if (!hasGroups) {
-      colWidths.push({ width: 1 }, { width: 18 }, { width: 10 }, { width: 1 }, { width: 18 }, { width: 10 }, { width: 1 }, { width: 18 }, { width: 10 });
+      // col layout: [spacer] | opt | Total | [spacer] | opt | Total | [spacer] | opt | Total
+      // col 1: spacer, col 2: opt, col 3: Total, col 4: spacer, col 5: spacer, col 6: opt, col 7: Total, col 8: spacer, col 9: spacer, col 10: opt, col 11: Total
+      colWidths.push(
+        { width: 1 }, { width: 18 }, { width: 10 },  // Table 1
+        { width: 1 }, { width: 1 },                    // Spacer
+        { width: 18 }, { width: 10 },                  // Table 2
+        { width: 1 }, { width: 1 },                    // Spacer
+        { width: 18 }, { width: 10 }                   // Table 3
+      );
     } else {
       // 3 tables each with (option + Total + numGroups groups), separated by spacers
       // Total cols = 3*(numGroups+2) + 2 spacers = 3*numGroups + 8
@@ -248,11 +227,10 @@ function generateExcelWorkbook() {
         else colWidths.push({ width: 10 });
       }
     }
-    console.log('generateExcelWorkbook called. hasGroups:', hasGroups, 'numGroups:', numGroups, 'groups:', groups.map(g => g.name));
     ws.columns = colWidths;
 
     let firstQuestion = true;
-    for (const colIdx of groupIndices) {
+    for (const colIdx of modQuestions) {
       // Add spacer row between questions (but not before the first)
       if (!firstQuestion) {
         ws.addRow();
@@ -472,12 +450,29 @@ function generateExcelWorkbook() {
     }
   }
 
+  // Set column widths for all worksheets
+  for (const ws of wb.worksheets) {
+    if (!hasGroups) {
+      // No groups: 11 columns total
+      ws.getColumn(1).width = 1;   // spacer
+      ws.getColumn(2).width = 18;  // Table 1 opt
+      ws.getColumn(3).width = 10;  // Table 1 Total
+      ws.getColumn(4).width = 1;   // spacer
+      ws.getColumn(5).width = 1;   // spacer
+      ws.getColumn(6).width = 18;  // Table 2 opt
+      ws.getColumn(7).width = 10;  // Table 2 Total
+      ws.getColumn(8).width = 1;   // spacer
+      ws.getColumn(9).width = 1;   // spacer
+      ws.getColumn(10).width = 18; // Table 3 opt
+      ws.getColumn(11).width = 10; // Table 3 Total
+    }
+  }
+
   return wb;
 }
 
 async function downloadExcel() {
   try {
-    console.log('questions selected:', selectedQuestions.length, 'headers:', headers.length);
     const wb = generateExcelWorkbook();
     if (!wb) {
       alert('请先上传 Excel 文件并选择题目');
@@ -499,6 +494,89 @@ async function downloadExcel() {
   }
 }
 
+// ==================== MODULE MANAGEMENT ====================
+function initModules() {
+  // Auto-classify questions into modules, preserving original order
+  modules = [];
+  let currentModule = null;
+
+  for (const qIdx of selectedQuestions) {
+    const header = headers[qIdx] || '';
+    const moduleName = detectModule(header);
+
+    // Start new module when module name changes
+    if (!currentModule || currentModule.name !== moduleName) {
+      currentModule = { id: nextModuleId++, name: moduleName, questionIdxs: [] };
+      modules.push(currentModule);
+    }
+    currentModule.questionIdxs.push(qIdx);
+  }
+}
+
+function addModuleAfterQuestion(beforeIdx) {
+  // Find which module contains this question
+  const currentModule = modules.find(m => m.questionIdxs.includes(beforeIdx));
+  if (!currentModule) return;
+
+  // Find position of this question in the module
+  const pos = currentModule.questionIdxs.indexOf(beforeIdx);
+
+  // Create new module with questions after this one
+  const newModule = {
+    id: nextModuleId++,
+    name: `模块 ${modules.length + 1}`,
+    questionIdxs: currentModule.questionIdxs.slice(pos + 1)
+  };
+
+  // Keep only questions up to and including this one in current module
+  currentModule.questionIdxs = currentModule.questionIdxs.slice(0, pos + 1);
+
+  // Insert new module after current module
+  const moduleIdx = modules.indexOf(currentModule);
+  modules.splice(moduleIdx + 1, 0, newModule);
+
+  saveConfig();
+  render();
+}
+
+function moveQuestionToModule(questionIdx, moduleId) {
+  // Remove from all modules
+  for (const m of modules) {
+    m.questionIdxs = m.questionIdxs.filter(i => i !== questionIdx);
+  }
+  // Add to target module
+  const target = modules.find(m => m.id === moduleId);
+  if (target) {
+    target.questionIdxs.push(questionIdx);
+  }
+  saveConfig();
+}
+
+function renameModule(moduleId, newName) {
+  const m = modules.find(m => m.id === moduleId);
+  if (m) {
+    m.name = newName;
+    saveConfig();
+  }
+}
+
+function deleteModule(moduleId) {
+  if (modules.length <= 1) return; // Keep at least one module
+  const m = modules.find(m => m.id === moduleId);
+  if (!m) return;
+  // Move all questions to the previous module
+  const idx = modules.indexOf(m);
+  const prevModule = modules[idx - 1];
+  if (prevModule) {
+    for (const qIdx of m.questionIdxs) {
+      prevModule.questionIdxs.push(qIdx);
+    }
+  }
+  modules = modules.filter(mod => mod.id !== moduleId);
+  saveConfig();
+  render();
+}
+
 // ==================== UI HANDLERS ====================
 async function handleFile(file) {
   if (!file) return;
@@ -516,6 +594,9 @@ async function handleFile(file) {
     headers = result.headers;
     rows = result.rows;
     selectedQuestions = headers.map((_, i) => i);
+
+    // Initialize modules after selectedQuestions is populated
+    initModules();
 
     // Update upload zone with file info
     const uploadHint = document.getElementById('uploadHint');
@@ -663,35 +744,44 @@ function render() {
   }
   show(qCard);
 
-  // Build flat list preserving original order, inserting module labels when topic changes
+  // Build question list using modules array
   const questionItems = [];
-  let lastMod = null;
-  for (let i = 0; i < headers.length; i++) {
-    const mod = detectModule(headers[i]);
-    const title = getShortTitle(headers[i]) || `列${i + 1}`;
-    const isMulti = rows.length > 0 && isMultiChoice(rows, i);
-    if (mod !== lastMod) {
-      questionItems.push({ type: 'module', name: mod });
-      lastMod = mod;
+  for (const mod of modules) {
+    questionItems.push({ type: 'module-start', moduleId: mod.id, moduleName: mod.name });
+    for (const qIdx of mod.questionIdxs) {
+      const title = getShortTitle(headers[qIdx]) || `列${qIdx + 1}`;
+      const isMulti = rows.length > 0 && isMultiChoice(rows, qIdx);
+      questionItems.push({ type: 'question', idx: qIdx, title, isMulti, moduleId: mod.id });
     }
-    questionItems.push({ type: 'question', idx: i, title, isMulti });
+    questionItems.push({ type: 'module-end' });
   }
 
   document.getElementById('questionCount').textContent = `已选择 ${selectedQuestions.length} / ${headers.length} 题`;
 
-  document.getElementById('questionList').innerHTML = questionItems.map((item, i) => {
-    if (item.type === 'module') {
-      const prev = questionItems[i - 1];
-      const close = prev && prev.type === 'question' ? '</div>' : '';
-      return `${close}<div class="question-module"><h4>${item.name}</h4>`;
-    }
-    return `
-        <label class="question-item">
+  let html = '';
+  for (let i = 0; i < questionItems.length; i++) {
+    const item = questionItems[i];
+    if (item.type === 'module-start') {
+      html += `<div class="question-module" data-module-id="${item.moduleId}">
+        <div class="module-header">
+          <input type="text" class="module-name-input" value="${item.moduleName}" onchange="renameModule(${item.moduleId}, this.value)">
+          <button class="module-delete-btn" onclick="deleteModule(${item.moduleId})" title="删除此模块，题目合并到上一个模块">×</button>
+        </div>
+        <div class="module-questions">`;
+    } else if (item.type === 'module-end') {
+      html += `</div></div>`;
+    } else if (item.type === 'question') {
+      html += `
+        <label class="question-item" data-module-id="${item.moduleId}">
           <input type="checkbox" ${selectedQuestions.includes(item.idx) ? 'checked' : ''} onchange="toggleQuestion(${item.idx})">
           <span>${item.title}</span>
           <span class="type-tag">${item.isMulti ? '多选' : '单选'}</span>
+          <button class="add-module-btn" onclick="addModuleAfterQuestion(${item.idx})" title="在此题后添加新模块">+</button>
         </label>`;
-  }).join('') + '</div>';
+    }
+  }
+
+  document.getElementById('questionList').innerHTML = html;
 
   document.getElementById('downloadBtn').disabled = selectedQuestions.length === 0;
 }
@@ -704,7 +794,7 @@ function renderSelectedGroups() {
          ondragstart="handleGroupDragStart(event, ${i})"
          ondragover="handleGroupDragOver(event, ${i})"
          ondragend="handleGroupDragEnd(event)">
-      <span class="drag-handle">⋮⋮</span>
+      <span class="drag-handle">☰</span>
       <span>${g.name}</span>
     </div>
   `).join('');
@@ -712,7 +802,7 @@ function renderSelectedGroups() {
 
 // ==================== CONFIG ====================
 function saveConfig() {
-  const data = { groups, selectedQuestions, groupingColIdx, config };
+  const data = { groups, selectedQuestions, groupingColIdx, config, modules };
   localStorage.setItem('survey_analysis_config', JSON.stringify(data));
 }
 
@@ -735,6 +825,13 @@ function loadSavedConfig() {
       }
       if (data.selectedQuestions) selectedQuestions = data.selectedQuestions;
       if (data.config) config = data.config;
+      // Restore modules or initialize
+      if (data.modules && Array.isArray(data.modules) && data.modules.length > 0) {
+        modules = data.modules;
+        nextModuleId = Math.max(...modules.map(m => m.id)) + 1;
+      } else {
+        initModules();
+      }
       render();
     }
   } catch (e) {
@@ -747,12 +844,13 @@ function resetConfig() {
   selectedQuestions = headers.map((_, i) => i);
   groupingColIdx = null;
   config = { groups: [], ordered: {}, mean_cols: {}, multi_idx: [] };
+  initModules();
   localStorage.removeItem('survey_analysis_config');
   render();
 }
 
 function exportConfig() {
-  const data = { groups, selectedQuestions, groupingColIdx, config };
+  const data = { groups, selectedQuestions, groupingColIdx, config, modules };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -775,6 +873,10 @@ function importConfig(e) {
       if (data.selectedQuestions) selectedQuestions = data.selectedQuestions;
       if (data.groupingColIdx !== undefined) groupingColIdx = data.groupingColIdx;
       if (data.config) config = data.config;
+      if (data.modules && Array.isArray(data.modules) && data.modules.length > 0) {
+        modules = data.modules;
+        nextModuleId = Math.max(...modules.map(m => m.id)) + 1;
+      }
       saveConfig();
       render();
       alert('配置已加载');
