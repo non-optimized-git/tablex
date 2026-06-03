@@ -564,12 +564,12 @@ function deleteModule(moduleId) {
   if (modules.length <= 1) return; // Keep at least one module
   const m = modules.find(m => m.id === moduleId);
   if (!m) return;
-  // Move all questions to the previous module
+  // Move all questions to the previous module (or next if first)
   const idx = modules.indexOf(m);
-  const prevModule = modules[idx - 1];
-  if (prevModule) {
+  const targetModule = modules[idx - 1] || modules[idx + 1];
+  if (targetModule) {
     for (const qIdx of m.questionIdxs) {
-      prevModule.questionIdxs.push(qIdx);
+      targetModule.questionIdxs.push(qIdx);
     }
   }
   modules = modules.filter(mod => mod.id !== moduleId);
