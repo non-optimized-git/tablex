@@ -497,6 +497,7 @@ async function downloadExcel() {
 // ==================== MODULE MANAGEMENT ====================
 function initModules() {
   // Auto-classify questions into modules, preserving original order
+  const MAX_MODULES = 10;
   modules = [];
   let currentModule = null;
 
@@ -510,6 +511,15 @@ function initModules() {
       modules.push(currentModule);
     }
     currentModule.questionIdxs.push(qIdx);
+  }
+
+  // Merge excess modules if over limit
+  if (modules.length > MAX_MODULES) {
+    const lastModule = modules[MAX_MODULES - 1];
+    for (let i = MAX_MODULES; i < modules.length; i++) {
+      lastModule.questionIdxs.push(...modules[i].questionIdxs);
+    }
+    modules = modules.slice(0, MAX_MODULES);
   }
 }
 
@@ -568,8 +578,17 @@ function deleteModule(moduleId) {
   const idx = modules.indexOf(m);
   const targetModule = modules[idx - 1] || modules[idx + 1];
   if (targetModule) {
+    // Insert questions into target module, maintaining original order
     for (const qIdx of m.questionIdxs) {
-      targetModule.questionIdxs.push(qIdx);
+      // Find the correct insertion point to maintain original order
+      const originalPos = selectedQuestions.indexOf(qIdx);
+      let insertIdx = 0;
+      for (let i = 0; i < targetModule.questionIdxs.length; i++) {
+        if (selectedQuestions.indexOf(targetModule.questionIdxs[i]) < originalPos) {
+          insertIdx = i + 1;
+        }
+      }
+      targetModule.questionIdxs.splice(insertIdx, 0, qIdx);
     }
   }
   modules = modules.filter(mod => mod.id !== moduleId);
