@@ -43,14 +43,22 @@ tablex/
 - 点击选择分组，支持拖拽排序已选分组
 - 分组配置自动保存到 localStorage
 
-### 题目选择
-- 按原始顺序展示，自动检测话题变化插入模块标签（用户画像、购车意向、智能驾驶、家庭用车、产品体验、其他）
+### 题目选择与模块分组
+- 按原始顺序展示，自动按关键词分类到模块（用户画像、购车意向、智能驾驶、家庭用车、产品体验、其他）
+- 模块数量上限 10 个，超出自动合并
+- 每个题目下方有 `+` 按钮，可在该题后添加新模块
+- 模块头部有 `×` 按钮可删除模块（题目合并到相邻模块）
+- 模块名称可直接点击修改
+- MUJI 风格模块背景（浅米色 #E8E4DC + 深色文字 #3D3D3D）
+- 单选/多选标签统一显示在题目末尾
+- 题目顺序始终保持不变，不受模块操作影响
 - 全选/全不选
 - 下载 Excel 按钮在题目选择区
 
 ### Excel 输出格式
 
-每个题目输出 3 个并排表格（含 spacer 空列）：
+- 每个模块生成一个 Sheet，Sheet 名称与模块名称一致
+- 每个题目输出 3 个并排表格（含 spacer 空列）：
 
 | 表格 | 内容 | 高亮 |
 |------|------|------|
@@ -77,6 +85,10 @@ tablex/
 | `generateExcelWorkbook()` | 生成 ExcelJS Workbook |
 | `handleFile(file)` | 上传文件后重置状态并解析 |
 | `loadSavedConfig()` | 从 localStorage 恢复分组配置 |
+| `initModules()` | 自动分类题目到模块（最多10个）|
+| `addModuleAfterQuestion(idx)` | 在指定题目后添加新模块 |
+| `deleteModule(moduleId)` | 删除模块，题目合并到相邻模块 |
+| `renameModule(moduleId, newName)` | 修改模块名称 |
 
 ## 状态管理
 
@@ -86,8 +98,9 @@ tablex/
 - `groupingColIdx` — 分组列索引
 - `groups[]` — 已选分组定义
 - `config` — 扩展配置（保留字段）
+- `modules[]` — 模块定义，每个模块包含 `{id, name, questionIdxs[]}`
 
 ## localStorage
 
-- `survey_analysis_config` — 保存分组配置，key 为 `groups`, `selectedQuestions`, `groupingColIdx`, `config`
+- `survey_analysis_config` — 保存配置，key 为 `groups`, `selectedQuestions`, `groupingColIdx`, `config`, `modules`
 - 上传新文件时清除旧配置，重新加载时验证列索引有效性
