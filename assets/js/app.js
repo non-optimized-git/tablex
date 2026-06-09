@@ -784,7 +784,7 @@ function render() {
     questionItems.push({ type: 'module-end' });
   }
 
-  document.getElementById('questionCount').textContent = `已选择 ${selectedQuestions.length} / ${headers.length} 题`;
+  document.getElementById('questionCount').textContent = `${selectedQuestions.length} 已选`;
 
   let html = '';
   for (let i = 0; i < questionItems.length; i++) {
@@ -793,7 +793,7 @@ function render() {
       html += `<div class="question-module" data-module-id="${item.moduleId}">
         <div class="module-header">
           <input type="text" class="module-name-input" value="${item.moduleName}" onchange="renameModule(${item.moduleId}, this.value)">
-          <button class="module-delete-btn" onclick="deleteModule(${item.moduleId})" title="删除此模块，题目合并到上一个模块">×</button>
+          <button class="module-delete-btn" onclick="deleteModule(${item.moduleId})" title="Delete module">×</button>
         </div>
         <div class="module-questions">`;
     } else if (item.type === 'module-end') {
@@ -803,13 +803,13 @@ function render() {
         <label class="question-item" data-module-id="${item.moduleId}">
           <input type="checkbox" ${selectedQuestions.includes(item.idx) ? 'checked' : ''} onchange="toggleQuestion(${item.idx})">
           <span>${item.title}</span>
-          <span class="type-tag">${item.isMulti ? '多选' : '单选'}</span>
-          <button class="add-module-btn" onclick="addModuleAfterQuestion(${item.idx})" title="在此题后添加新模块">+</button>
+          <span class="type-tag">${item.isMulti ? 'multi' : 'single'}</span>
+          <button class="add-module-btn" onclick="addModuleAfterQuestion(${item.idx})" title="Add module after this">+</button>
         </label>`;
     }
   }
 
-  document.getElementById('questionList').innerHTML = html;
+  document.getElementById('questionList').innerHTML = '<div class="question-list">' + html + '</div>';
 
   document.getElementById('downloadBtn').disabled = selectedQuestions.length === 0;
 }
