@@ -28,14 +28,37 @@ function detectModule(header) {
   return '其他';
 }
 
+function cleanHeader(header) {
+  if (!header) return '';
+  return String(header).replace(/<[^>]*>/g, '').replace(/^[a-fA-F0-9]{2,6}[\s_#:]+/, '').trim();
+}
+
 function getShortTitle(header) {
   if (!header) return '';
-  const cleaned = String(header).replace(/<[^>]*>/g, '').replace(/^[a-fA-F0-9]{6}">/, '').trim();
-  const parts = cleaned.split(/[\s_#]+/);
-  for (let i = parts.length - 1; i >= 0; i--) {
-    if (parts[i].length >= 4) return parts[i];
-  }
-  return cleaned.slice(0, 20);
+  let s = String(header).replace(/<[^>]*>/g, '').replace(/^[a-fA-F0-9]{6}">/, '').trim();
+  // Remove type tag
+  s = s.replace(/[（(]\s*(单选|多选|量表|矩阵|排序|填空|开放)\s*[）)]/g, '');
+  // Remove leading question phrases
+  s = s.replace(/^(请问\s*你(目前|目前对|是否|进店时|进店后|在进店看过)?\s*)/, '');
+  s = s.replace(/^(请问\s*新乐道L60的?\s*)/, '');
+  s = s.replace(/^(你的?|您)\s*/, '');
+  s = s.replace(/^(请问\s*)/, '');
+  // Remove brand name
+  s = s.replace(/新乐道L60/gi, '');
+  // Remove trailing question phrases
+  s = s.replace(/\s*哪些\s*[?？].*$/, ''); // 哪些...？ → 哪些
+  s = s.replace(/\s*什么\s*[?？].*$/, ''); // 什么...？ → 什么
+  s = s.replace(/\s*了吗\s*[?？]?.*$/, ''); // ...了吗？ → (empty)
+  s = s.replace(/[?？].*$/, ''); // remaining question mark + after
+  s = s.replace(/\s*让你比较犹豫\s*$/, '');
+  s = s.replace(/\s*让你比较不满意\s*$/, '');
+  s = s.replace(/\s*有没有\s*[?？]?.*$/, ''); // 有没有...？
+  s = s.replace(/了\s*$/, '');
+  s = s.replace(/[是的了]\s*$/, '');
+  s = s.replace(/^[a-fA-F0-9]{2,6}[\s_#:]+/, '');
+  s = s.replace(/\s+/g, ' ').trim();
+  if (!s) s = String(header).slice(0, 20);
+  return s.length > 16 ? s.slice(0, 16) : s;
 }
 
 // ==================== EXCEL PARSER ====================
@@ -143,30 +166,33 @@ function isMultiChoice(allRows, colIdx) {
 
 function r3(x) {
   if (x === null || x === undefined) return null;
-  return Math.abs(x) < 0.0005 ? 0 : Math.round(x * 1000) / 1000;
+  return x < 0.0005 ? 0 : Math.round(x * 1000) / 1000;
 }
 
 // ==================== EXCEL WRITER (ExcelJS) ====================
 const RED_FILL = 'FFFFCCCC';
 const GREEN_FILL = 'FFCCFFCC';
-const GRAY_FILL = 'FFD9D9D9';
+const GRAY_FILL = 'FFDEE0E3';
+const BASE_FILL = 'FF8F959E';
 
-function makeBorder() {
-  return { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
-}
+const BORDER = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
+const FONT_DATA = { name: '微软雅黑', size: 10 };
+const FONT_HEADER = { name: '微软雅黑', size: 10 };
+
+function makeBorder() { return BORDER; }
 
 function makeHeaderStyle(align) {
-  return { font: { name: '黑体', size: 10 }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: GRAY_FILL } }, alignment: { horizontal: align }, border: makeBorder() };
+  return { font: FONT_HEADER, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: GRAY_FILL } }, alignment: { horizontal: align }, border: BORDER };
 }
 
 function makeDataStyle(align, numFmt) {
-  const s = { font: { name: '黑体', size: 11 }, alignment: { horizontal: align }, border: makeBorder() };
+  const s = { font: FONT_DATA, alignment: { horizontal: align }, border: BORDER };
   if (numFmt) s.numFmt = numFmt;
   return s;
 }
 
 function makeFillStyle(color, align, numFmt) {
-  const s = { font: { name: '黑体', size: 11 }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: color } }, alignment: { horizontal: align }, border: makeBorder() };
+  const s = { font: FONT_DATA, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: color } }, alignment: { horizontal: align }, border: BORDER };
   if (numFmt) s.numFmt = numFmt;
   return s;
 }
@@ -238,6 +264,7 @@ function generateExcelWorkbook() {
       firstQuestion = false;
       const header = headers[colIdx] || `列${colIdx}`;
       const title = getShortTitle(header);
+      const fullTitle = cleanHeader(header);
       const isMulti = isMultiChoice(rows, colIdx);
 
       // Title row: 题干 in row 1, 题目 in row 2 — each table gets its own cell
@@ -252,14 +279,14 @@ function generateExcelWorkbook() {
         for (const t of tables) {
           const cell = titleRow.getCell(t.opt);
           cell.value = title;
-          cell.font = { name: '黑体', size: 14 };
+          cell.font = { name: '微软雅黑', size: 14, bold: true };
           cell.alignment = { horizontal: 'left' };
         }
         // Row 2: 题目 info
         for (const t of tables) {
           const cell = subRow.getCell(t.opt);
-          cell.value = `题目: ${title} (${isMulti ? '多选' : '单选'})`;
-          cell.font = { name: '黑体', size: 9 };
+          cell.value = `题目: ${fullTitle} (${isMulti ? '多选' : '单选'})`;
+          cell.font = { name: '微软雅黑', size: 10 };
           cell.alignment = { horizontal: 'left' };
         }
       } else {
@@ -267,12 +294,12 @@ function generateExcelWorkbook() {
           const tableStart = 1 + table * (numGroups + 3);
           const titleCell = titleRow.getCell(tableStart);
           titleCell.value = title;
-          titleCell.font = { name: '黑体', size: 14 };
+          titleCell.font = { name: '微软雅黑', size: 14, bold: true };
           titleCell.alignment = { horizontal: 'left' };
 
           const subCell = subRow.getCell(tableStart);
-          subCell.value = `题目: ${title} (${isMulti ? '多选' : '单选'})`;
-          subCell.font = { name: '黑体', size: 9 };
+          subCell.value = `题目: ${fullTitle} (${isMulti ? '多选' : '单选'})`;
+          subCell.font = { name: '微软雅黑', size: 10 };
           subCell.alignment = { horizontal: 'left' };
         }
       }
@@ -298,8 +325,8 @@ function generateExcelWorkbook() {
         // Base row (italic)
         const bRow = ws.addRow();
         for (const t of [t1, t2, t3]) {
-          const c1 = bRow.getCell(t.opt); c1.value = 'base'; c1.style = makeDataStyle('left'); c1.font = { name: '黑体', size: 11, italic: true };
-          const c2 = bRow.getCell(t.tot); c2.value = totalUsers; c2.style = makeDataStyle('center'); c2.font = { name: '黑体', size: 11, italic: true };
+          const c1 = bRow.getCell(t.opt); c1.value = 'base'; c1.style = makeDataStyle('left'); c1.font = { name: '微软雅黑', size: 10, italic: true, color: { argb: BASE_FILL } };
+          const c2 = bRow.getCell(t.tot); c2.value = totalUsers; c2.style = makeDataStyle('center'); c2.font = { name: '微软雅黑', size: 10, italic: true, color: { argb: BASE_FILL } };
         }
 
         // Data rows
@@ -387,8 +414,8 @@ function generateExcelWorkbook() {
         // Base row
         const bRow = ws.addRow();
         cellIdx = 1;
-        const applyBaseStyle = (cell, value) => { cell.value = value; cell.style = makeDataStyle('center'); cell.font = { name: '黑体', size: 11, italic: true }; };
-        const applyBaseStyleLeft = (cell, value) => { cell.value = value; cell.style = makeDataStyle('left'); cell.font = { name: '黑体', size: 11, italic: true }; };
+        const applyBaseStyle = (cell, value) => { cell.value = value; cell.style = makeDataStyle('center'); cell.font = { name: '微软雅黑', size: 10, italic: true, color: { argb: BASE_FILL } }; };
+        const applyBaseStyleLeft = (cell, value) => { cell.value = value; cell.style = makeDataStyle('left'); cell.font = { name: '微软雅黑', size: 10, italic: true, color: { argb: BASE_FILL } }; };
         applyBaseStyleLeft(bRow.getCell(cellIdx++), 'base');
         applyBaseStyle(bRow.getCell(cellIdx++), totalAllUsers);
         for (let i = 0; i < numGroups; i++) { applyBaseStyle(bRow.getCell(cellIdx++), groupUsers[orderedGroups[i]] || 0); }
@@ -447,24 +474,6 @@ function generateExcelWorkbook() {
 
         // No mean row
       }
-    }
-  }
-
-  // Set column widths for all worksheets
-  for (const ws of wb.worksheets) {
-    if (!hasGroups) {
-      // No groups: 11 columns total
-      ws.getColumn(1).width = 1;   // spacer
-      ws.getColumn(2).width = 18;  // Table 1 opt
-      ws.getColumn(3).width = 10;  // Table 1 Total
-      ws.getColumn(4).width = 1;   // spacer
-      ws.getColumn(5).width = 1;   // spacer
-      ws.getColumn(6).width = 18;  // Table 2 opt
-      ws.getColumn(7).width = 10;  // Table 2 Total
-      ws.getColumn(8).width = 1;   // spacer
-      ws.getColumn(9).width = 1;   // spacer
-      ws.getColumn(10).width = 18; // Table 3 opt
-      ws.getColumn(11).width = 10; // Table 3 Total
     }
   }
 
@@ -722,7 +731,7 @@ function render() {
 
   show(groupCard);
 
-  const colOptions = headers.map((h, i) => ({ idx: i, name: getShortTitle(h) || `列${i + 1}` })).filter(h => h.name);
+  const colOptions = headers.map((h, i) => ({ idx: i, name: cleanHeader(h) || `列${i + 1}` })).filter(h => h.name);
   groupColSelect.innerHTML = '<option value="">-- 选择分组列 --</option>' +
     colOptions.map(opt => `<option value="${opt.idx}" ${groupingColIdx === opt.idx ? 'selected' : ''}>${opt.name}</option>`).join('');
 
@@ -768,7 +777,7 @@ function render() {
   for (const mod of modules) {
     questionItems.push({ type: 'module-start', moduleId: mod.id, moduleName: mod.name });
     for (const qIdx of mod.questionIdxs) {
-      const title = getShortTitle(headers[qIdx]) || `列${qIdx + 1}`;
+      const title = cleanHeader(headers[qIdx]) || `列${qIdx + 1}`;
       const isMulti = rows.length > 0 && isMultiChoice(rows, qIdx);
       questionItems.push({ type: 'question', idx: qIdx, title, isMulti, moduleId: mod.id });
     }
