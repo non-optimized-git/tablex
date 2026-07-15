@@ -5,14 +5,14 @@
 }
 
 :root {
-  --bg: #F7F7F7;
-  --card: #FFFFFF;
-  --border: #E5E5E5;
-  --text: #1A1A1A;
-  --muted: #888888;
-  --light: #F0F0F0;
-  --accent: #1A1A1A;
-  --accent-hover: #000000;
+  --bg: #FAF7F2;
+  --card: #FFFDF9;
+  --border: #E8E0D4;
+  --text: #3E2723;
+  --muted: #A89888;
+  --light: #F5F0E8;
+  --accent: #5C4033;
+  --accent-hover: #3E2723;
   --highlight: #C4A87C;
 }
 
@@ -28,7 +28,7 @@ body {
 
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #CCCCCC; border-radius: 2px; }
+::-webkit-scrollbar-thumb { background: #C4B8A8; border-radius: 2px; }
 
 input:focus, select:focus, button:focus {
   outline: none;
@@ -94,8 +94,8 @@ header {
 }
 
 .btn-primary:disabled {
-  background: #CCCCCC;
-  border-color: #CCCCCC;
+  background: #C4B8A8;
+  border-color: #C4B8A8;
   cursor: not-allowed;
 }
 
@@ -106,8 +106,8 @@ header {
 }
 
 .btn-secondary:hover {
-  border-color: var(--text);
-  background: var(--text);
+  border-color: var(--accent);
+  background: var(--accent);
   color: white;
 }
 
@@ -139,19 +139,19 @@ main {
 .upload-zone {
   border: 1px dashed var(--border);
   border-radius: 2px;
-  padding: 64px 32px;
+  padding: 32px;
   text-align: center;
   transition: all 0.2s ease;
   cursor: pointer;
 }
 
 .upload-zone:hover {
-  border-color: var(--text);
+  border-color: var(--accent);
   background: var(--light);
 }
 
 .upload-zone.dragging {
-  border-color: var(--text);
+  border-color: var(--accent);
   background: var(--light);
 }
 
@@ -168,9 +168,14 @@ main {
   letter-spacing: 0.05em;
 }
 
+.upload-zone p strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .upload-zone .hint {
   font-size: 12px;
-  color: #AAAAAA;
+  color: #B8A898;
   margin-top: 8px;
 }
 
@@ -184,17 +189,83 @@ select {
   background: white;
   color: var(--text);
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23A89888' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 16px center;
 }
 
 select:focus {
-  border-color: var(--text);
+  border-color: var(--accent);
 }
 
 select option {
   padding: 8px;
+}
+
+/* ========== SEARCH SELECT ========== */
+.search-select {
+  position: relative;
+}
+
+.search-select input[type="text"] {
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  font-size: 14px;
+  background: white;
+  color: var(--text);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23A89888' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 16px center;
+}
+
+.search-select input[type="text"]:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.search-select-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 300px;
+  overflow-y: auto;
+  background: white;
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 2px 2px;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.search-select-dropdown.show {
+  display: block;
+}
+
+.search-select-option {
+  padding: 10px 16px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text);
+  border-bottom: 1px solid var(--light);
+}
+
+.search-select-option:hover {
+  background: var(--light);
+}
+
+.search-select-option.selected {
+  background: var(--accent);
+  color: white;
+}
+
+.search-select-option .option-count {
+  float: right;
+  opacity: 0.6;
+  font-size: 12px;
 }
 
 /* ========== GROUP ========== */
@@ -225,12 +296,12 @@ select option {
 }
 
 .group-tag.unselected:hover {
-  border-color: var(--text);
+  border-color: var(--accent);
 }
 
 .group-tag.selected {
-  background: var(--text);
-  border-color: var(--text);
+  background: var(--accent);
+  border-color: var(--accent);
   color: white;
 }
 
@@ -252,7 +323,21 @@ select option {
 }
 
 .drag-over-target {
-  outline: 1px dashed var(--text);
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+  background: transparent !important;
+}
+
+.group-action-btn {
+  margin-left: 8px;
+  cursor: pointer;
+  color: white;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.group-action-btn:hover {
+  opacity: 1;
 }
 
 /* ========== QUESTIONS ========== */
@@ -311,7 +396,7 @@ select option {
 
 .module-name-input:focus {
   outline: none;
-  border-bottom: 1px solid var(--text);
+  border-bottom: 1px solid var(--accent);
 }
 
 .module-delete-btn {
@@ -325,7 +410,7 @@ select option {
 }
 
 .module-delete-btn:hover {
-  color: var(--text);
+  color: var(--accent);
 }
 
 .question-list {
@@ -347,13 +432,13 @@ select option {
 
 .question-item:hover {
   background: var(--light);
-  border-color: var(--border);
+  border-color: var(--accent);
 }
 
 .question-item input[type="checkbox"] {
   width: 18px;
   height: 18px;
-  accent-color: var(--text);
+  accent-color: var(--accent);
   cursor: pointer;
 }
 
@@ -392,8 +477,8 @@ select option {
 }
 
 .add-module-btn:hover {
-  border-color: var(--text);
-  color: var(--text);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .select-all {
@@ -409,7 +494,29 @@ select option {
 }
 
 .select-all:hover {
-  color: var(--text);
+  color: var(--accent);
+}
+
+/* ========== GROUP EDITOR ========== */
+.condition-item {
+  margin-bottom: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--light);
+}
+
+.condition-item select:focus {
+  border-color: var(--accent);
+}
+
+.condition-item select {
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.condition-item .group-values {
+  margin-top: 8px;
 }
 
 /* ========== FOOTER ========== */

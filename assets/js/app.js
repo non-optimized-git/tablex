@@ -8,6 +8,14 @@ let config = { groups: [], ordered: {}, mean_cols: {}, multi_idx: [] };
 // modules: [{id: number, name: string, questionIdxs: number[]}]
 let modules = [];
 let nextModuleId = 1;
+let uploadedFileName = ''; // 上传的文件名（不含扩展名）
+// 表头编辑器状态
+let editingGroupIndex = -1; // -1 表示新建，>=0 表示编辑
+let editingConditions = []; // [{colIdx: number, values: string[]}]
+
+// 拖拽选择状态
+let isDraggingSelect = false;
+let dragSelectValue = false; // true=选中, false=取消
 
 // ==================== CONSTANTS ====================
 const MODULE_KEYWORDS = {
@@ -113,23 +121,26 @@ function splitOpts(val) {
 }
 
 function groupRowsCustom(allRows, customGroups) {
-  const groups = {};
+  const result = {};
   for (const groupDef of customGroups) {
     const groupName = groupDef.name;
     const conditions = groupDef.conditions;
-    groups[groupName] = [];
+    result[groupName] = [];
     for (const row of allRows) {
       let match = true;
-      for (const [colIdx, expectedVal] of conditions) {
-        if (safe(row[colIdx]) !== expectedVal) {
+      // 列间 AND 关系
+      for (const cond of conditions) {
+        const val = safe(row[cond.colIdx]);
+        // 列内 OR 关系：满足任一值即可
+        if (!cond.values.includes(val)) {
           match = false;
           break;
         }
       }
-      if (match) groups[groupName].push(row);
+      if (match) result[groupName].push(row);
     }
   }
-  return groups;
+  return result;
 }
 
 function countOptions(allRows, colIdx, isMulti) {
@@ -170,10 +181,10 @@ function r3(x) {
 }
 
 // ==================== EXCEL WRITER (ExcelJS) ====================
-const RED_FILL = 'FFFFCCCC';
-const GREEN_FILL = 'FFCCFFCC';
-const GRAY_FILL = 'FFDEE0E3';
-const BASE_FILL = 'FF8F959E';
+const RED_FILL = 'FFE8CCCC';
+const GREEN_FILL = 'FFD4E8D4';
+const GRAY_FILL = 'FFE8E0D4';
+const BASE_FILL = 'FFA89888';
 
 const BORDER = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
 const FONT_DATA = { name: '微软雅黑', size: 10 };
@@ -377,19 +388,8 @@ function generateExcelWorkbook() {
         const totalCounts = countOptions(rows, colIdx, isMulti);
         const totalAllUsers = countUsers(rows, colIdx);
 
-        const allOptsSet = new Set();
-        for (const counts of Object.values(groupCounts)) {
-          for (const opt of Object.keys(counts)) allOptsSet.add(opt);
-        }
-        for (const opt of Object.keys(totalCounts)) allOptsSet.add(opt);
-
-        const allOptsCount = {};
-        for (const counts of Object.values(groupCounts)) {
-          for (const [opt, count] of Object.entries(counts)) {
-            allOptsCount[opt] = (allOptsCount[opt] || 0) + count;
-          }
-        }
-        const allOpts = [...allOptsSet].sort((a, b) => (allOptsCount[b] || 0) - (allOptsCount[a] || 0));
+        // 收集所有选项（从 total 中获取，确保不遗漏）
+        const allOpts = Object.keys(totalCounts).sort((a, b) => totalCounts[b] - totalCounts[a]);
 
         // Header row
         const hRow = ws.addRow();
@@ -492,7 +492,13 @@ async function downloadExcel() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = '分析结果.xlsx';
+    // 文件名：上传文件名_MMddHHmm.xlsx
+    const now = new Date();
+    const timeStr = String(now.getMonth() + 1).padStart(2, '0') +
+                    String(now.getDate()).padStart(2, '0') +
+                    String(now.getHours()).padStart(2, '0') +
+                    String(now.getMinutes()).padStart(2, '0');
+    a.download = uploadedFileName ? `${uploadedFileName}_${timeStr}.xlsx` : `${timeStr}.xlsx`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -505,30 +511,10 @@ async function downloadExcel() {
 
 // ==================== MODULE MANAGEMENT ====================
 function initModules() {
-  // Auto-classify questions into modules, preserving original order
-  const MAX_MODULES = 10;
+  // 所有题目放在一个默认模块中
   modules = [];
-  let currentModule = null;
-
-  for (const qIdx of selectedQuestions) {
-    const header = headers[qIdx] || '';
-    const moduleName = detectModule(header);
-
-    // Start new module when module name changes
-    if (!currentModule || currentModule.name !== moduleName) {
-      currentModule = { id: nextModuleId++, name: moduleName, questionIdxs: [] };
-      modules.push(currentModule);
-    }
-    currentModule.questionIdxs.push(qIdx);
-  }
-
-  // Merge excess modules if over limit
-  if (modules.length > MAX_MODULES) {
-    const lastModule = modules[MAX_MODULES - 1];
-    for (let i = MAX_MODULES; i < modules.length; i++) {
-      lastModule.questionIdxs.push(...modules[i].questionIdxs);
-    }
-    modules = modules.slice(0, MAX_MODULES);
+  if (selectedQuestions.length > 0) {
+    modules.push({ id: nextModuleId++, name: '题目', questionIdxs: [...selectedQuestions] });
   }
 }
 
@@ -616,6 +602,8 @@ async function handleFile(file) {
     groupingColIdx = null;
     groups = [];
     config = { groups: [], ordered: {}, mean_cols: {}, multi_idx: [] };
+    editingGroupIndex = -1;
+    editingConditions = [];
     localStorage.removeItem('survey_analysis_config');
 
     const result = await parseExcel(file);
@@ -623,13 +611,16 @@ async function handleFile(file) {
     rows = result.rows;
     selectedQuestions = headers.map((_, i) => i);
 
+    // 保存上传的文件名（不含扩展名）
+    uploadedFileName = file.name.replace(/\.[^/.]+$/, '');
+
     // Initialize modules after selectedQuestions is populated
     initModules();
 
     // Update upload zone with file info
     const uploadHint = document.getElementById('uploadHint');
     if (uploadHint) {
-      uploadHint.textContent = `${file.name} (${rows.length} 行 × ${headers.length} 列)`;
+      uploadHint.innerHTML = `<strong>${file.name}</strong> (${rows.length} 行 × ${headers.length} 列)`;
     }
 
     render();
@@ -640,22 +631,213 @@ async function handleFile(file) {
   }
 }
 
-function handleGroupColChange(e) {
-  groupingColIdx = e.target.value === '' ? null : parseInt(e.target.value);
-  groups = [];
+// 搜索选择框相关函数
+function updateGroupColDropdown() {
+  const dropdown = document.getElementById('groupColDropdown');
+  const input = document.getElementById('groupColInput');
+  if (!dropdown || !input) return;
+
+  const searchText = input.value.toLowerCase();
+  const colOptions = headers.map((h, i) => ({ idx: i, name: cleanHeader(h) || `列${i + 1}` })).filter(h => h.name);
+  const filtered = colOptions.filter(opt => opt.name.toLowerCase().includes(searchText));
+
+  dropdown.innerHTML = filtered.map(opt => `
+    <div class="search-select-option ${groupingColIdx === opt.idx ? 'selected' : ''}"
+         data-idx="${opt.idx}" data-name="${opt.name}">
+      ${opt.name}
+    </div>
+  `).join('');
+
+  dropdown.classList.add('show');
+}
+
+function selectGroupCol(idx, name) {
+  groupingColIdx = idx;
+  document.getElementById('groupColInput').value = name;
+  document.getElementById('groupColDropdown').classList.remove('show');
   render();
   saveConfig();
 }
 
+function initGroupColSearch() {
+  const container = document.getElementById('groupColSearchSelect');
+  if (!container) return;
+
+  // 点击选项
+  container.addEventListener('click', (e) => {
+    const option = e.target.closest('.search-select-option');
+    if (option) {
+      selectGroupCol(parseInt(option.dataset.idx), option.dataset.name);
+      return;
+    }
+  });
+
+  // 输入框获得焦点时显示下拉
+  container.addEventListener('focusin', (e) => {
+    if (e.target.id === 'groupColInput') {
+      updateGroupColDropdown();
+    }
+  });
+
+  // 输入时搜索
+  container.addEventListener('input', (e) => {
+    if (e.target.id === 'groupColInput') {
+      groupingColIdx = null;
+      updateGroupColDropdown();
+      hide(document.getElementById('groupValuesContainer'));
+    }
+  });
+
+  // 点击外部关闭下拉
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#groupColSearchSelect')) {
+      const dropdown = document.getElementById('groupColDropdown');
+      if (dropdown) dropdown.classList.remove('show');
+    }
+  });
+}
+
 function toggleGroupValue(val) {
-  const exists = groups.find(g => g.name === val && g.conditions[0][0] === groupingColIdx);
+  // 检查是否已存在基础表头（单条件、单值）
+  const exists = groups.find(g =>
+    g.conditions.length === 1 &&
+    g.conditions[0].colIdx === groupingColIdx &&
+    g.conditions[0].values.length === 1 &&
+    g.conditions[0].values[0] === val
+  );
   if (exists) {
     groups = groups.filter(g => g !== exists);
   } else {
-    groups.push({ name: val, conditions: [[groupingColIdx, val]] });
+    groups.push({ name: val, conditions: [{ colIdx: groupingColIdx, values: [val] }] });
   }
   render();
   saveConfig();
+}
+
+function openGroupEditor(groupIndex) {
+  editingGroupIndex = groupIndex;
+  if (groupIndex >= 0) {
+    editingConditions = JSON.parse(JSON.stringify(groups[groupIndex].conditions));
+  } else {
+    editingConditions = [{ colIdx: null, values: [] }];
+  }
+  render();
+}
+
+function cancelGroupEditor() {
+  editingGroupIndex = -1;
+  editingConditions = [];
+  render();
+}
+
+function addCondition() {
+  editingConditions.push({ colIdx: null, values: [] });
+  render();
+}
+
+function removeCondition(condIndex) {
+  editingConditions.splice(condIndex, 1);
+  if (editingConditions.length === 0) {
+    editingConditions.push({ colIdx: null, values: [] });
+  }
+  render();
+}
+
+function handleConditionColChange(condIndex, colIdx) {
+  editingConditions[condIndex].colIdx = colIdx === '' ? null : parseInt(colIdx);
+  editingConditions[condIndex].values = [];
+  render();
+}
+
+function toggleConditionValue(condIndex, val) {
+  const cond = editingConditions[condIndex];
+  const idx = cond.values.indexOf(val);
+  if (idx >= 0) {
+    cond.values.splice(idx, 1);
+  } else {
+    cond.values.push(val);
+  }
+  render();
+}
+
+function saveGroup() {
+  // 验证所有条件都有效
+  const validConditions = editingConditions.filter(c => c.colIdx !== null && c.values.length > 0);
+  if (validConditions.length === 0) {
+    alert('请至少添加一个有效条件');
+    return;
+  }
+
+  // 生成表头名称
+  let name = validConditions.map(cond => {
+    const colName = cleanHeader(headers[cond.colIdx]) || `列${cond.colIdx + 1}`;
+    return cond.values.join('+');
+  }).join(' & ');
+
+  // 检查重名
+  const existingNames = groups.map(g => g.name);
+  if (existingNames.includes(name)) {
+    let i = 2;
+    while (existingNames.includes(`${name} (${i})`)) i++;
+    name = `${name} (${i})`;
+  }
+
+  const newGroup = { name, conditions: validConditions };
+  if (editingGroupIndex >= 0) {
+    groups[editingGroupIndex] = newGroup;
+  } else {
+    groups.push(newGroup);
+  }
+
+  editingGroupIndex = -1;
+  editingConditions = [];
+  render();
+  saveConfig();
+}
+
+function deleteGroup(groupIndex) {
+  groups.splice(groupIndex, 1);
+  render();
+  saveConfig();
+}
+
+function startDragSelect(event, idx) {
+  // 只响应左键
+  if (event.button !== 0) return;
+  isDraggingSelect = true;
+  // 记录初始状态：如果当前未选中，则拖拽操作为选中；反之为取消
+  const isSelected = selectedQuestions.includes(idx);
+  dragSelectValue = !isSelected;
+}
+
+function handleDragSelect(idx) {
+  if (!isDraggingSelect) return;
+  setQuestionSelected(idx, dragSelectValue);
+}
+
+function setQuestionSelected(idx, selected) {
+  const wasSelected = selectedQuestions.includes(idx);
+  if (selected && !wasSelected) {
+    selectedQuestions.push(idx);
+    updateCheckbox(idx, true);
+  } else if (!selected && wasSelected) {
+    selectedQuestions = selectedQuestions.filter(i => i !== idx);
+    updateCheckbox(idx, false);
+  }
+}
+
+function updateCheckbox(idx, checked) {
+  const checkbox = document.querySelector(`.question-item[data-question-idx="${idx}"] input[type="checkbox"]`);
+  if (checkbox) checkbox.checked = checked;
+  // 更新下载按钮状态
+  document.getElementById('downloadBtn').disabled = selectedQuestions.length === 0;
+}
+
+function endDragSelect() {
+  if (isDraggingSelect) {
+    isDraggingSelect = false;
+    saveConfig();
+  }
 }
 
 function selectAllQuestions() {
@@ -721,23 +903,32 @@ function render() {
   const groupCard = document.getElementById('groupSelectorCard');
   const groupColSelect = document.getElementById('groupColSelect');
   const groupValuesContainer = document.getElementById('groupValuesContainer');
+  const complexGroupSection = document.getElementById('complexGroupSection');
   const selectedGroupsContainer = document.getElementById('selectedGroupsContainer');
   const qCard = document.getElementById('questionSelectorCard');
   if (headers.length === 0) {
     hide(groupCard);
-    hide(document.getElementById('questionSelectorCard'));
+    hide(qCard);
     return;
   }
 
   show(groupCard);
+  complexGroupSection.style.display = 'flex';
 
+  // 基础表头选择 - 搜索选择框
+  const groupColInput = document.getElementById('groupColInput');
   const colOptions = headers.map((h, i) => ({ idx: i, name: cleanHeader(h) || `列${i + 1}` })).filter(h => h.name);
-  groupColSelect.innerHTML = '<option value="">-- 选择分组列 --</option>' +
-    colOptions.map(opt => `<option value="${opt.idx}" ${groupingColIdx === opt.idx ? 'selected' : ''}>${opt.name}</option>`).join('');
+
+  // 更新输入框显示
+  if (groupingColIdx !== null) {
+    const selectedCol = colOptions.find(opt => opt.idx === groupingColIdx);
+    groupColInput.value = selectedCol ? selectedCol.name : '';
+  } else {
+    groupColInput.value = '';
+  }
 
   if (groupingColIdx === null) {
     hide(groupValuesContainer);
-    hide(selectedGroupsContainer);
   } else {
     show(groupValuesContainer);
 
@@ -751,19 +942,69 @@ function render() {
       }
     }
     const sortedValues = [...values].sort();
-    const selectedValues = groups.filter(g => g.conditions[0][0] === groupingColIdx).map(g => g.name);
+    const selectedValues = groups.filter(g => g.conditions.length === 1 && g.conditions[0].colIdx === groupingColIdx && g.conditions[0].values.length === 1).map(g => g.conditions[0].values[0]);
 
     document.getElementById('groupValues').innerHTML = sortedValues.map(val => `
       <button class="group-tag ${selectedValues.includes(val) ? 'selected' : 'unselected'}"
               onclick="toggleGroupValue('${val.replace(/'/g, "\\'")}')">${val} <span style="opacity:0.6;font-size:11px">(${valueCounts[val]})</span></button>
     `).join('');
+  }
 
-    if (groups.length > 0) {
-      show(selectedGroupsContainer);
-      renderSelectedGroups();
-    } else {
-      hide(selectedGroupsContainer);
-    }
+  // 复杂表头编辑器
+  const groupEditorForm = document.getElementById('groupEditorForm');
+  const addGroupBtn = document.getElementById('addGroupBtn');
+  const groupConditions = document.getElementById('groupConditions');
+
+  if (editingGroupIndex >= 0 || editingConditions.length > 0) {
+    show(groupEditorForm);
+    hide(addGroupBtn);
+
+    groupConditions.innerHTML = editingConditions.map((cond, condIdx) => {
+      const selectedCol = cond.colIdx !== null ? cond.colIdx : '';
+      let valueButtons = '';
+
+      if (selectedCol !== '') {
+        const values = new Set();
+        const valueCounts = {};
+        for (const row of rows) {
+          const v = safe(row[parseInt(selectedCol)]);
+          if (v !== null) {
+            values.add(v);
+            valueCounts[v] = (valueCounts[v] || 0) + 1;
+          }
+        }
+        const sortedValues = [...values].sort();
+        valueButtons = sortedValues.map(val => `
+          <button class="group-tag ${cond.values.includes(val) ? 'selected' : 'unselected'}"
+                  onclick="toggleConditionValue(${condIdx}, '${val.replace(/'/g, "\\'")}')">${val} <span style="opacity:0.6;font-size:11px">(${valueCounts[val]})</span></button>
+        `).join('');
+      }
+
+      return `
+        <div class="condition-item">
+          <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+            <span style="font-size:12px; color:var(--muted);">条件 ${condIdx + 1}</span>
+            <select onchange="handleConditionColChange(${condIdx}, this.value)" style="flex:1;">
+              <option value="">-- 选择列 --</option>
+              ${colOptions.map(opt => `<option value="${opt.idx}" ${parseInt(selectedCol) === opt.idx ? 'selected' : ''}>${opt.name}</option>`).join('')}
+            </select>
+            ${editingConditions.length > 1 ? `<button onclick="removeCondition(${condIdx})" style="background:none; border:none; color:var(--muted); cursor:pointer;">×</button>` : ''}
+          </div>
+          ${selectedCol !== '' ? `<div class="group-values">${valueButtons}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+  } else {
+    hide(groupEditorForm);
+    show(addGroupBtn);
+  }
+
+  // 已选表头列表
+  if (groups.length > 0) {
+    show(selectedGroupsContainer);
+    renderSelectedGroups();
+  } else {
+    hide(selectedGroupsContainer);
   }
 
   if (headers.length === 0) {
@@ -784,8 +1025,6 @@ function render() {
     questionItems.push({ type: 'module-end' });
   }
 
-  document.getElementById('questionCount').textContent = `${selectedQuestions.length} 已选`;
-
   let html = '';
   for (let i = 0; i < questionItems.length; i++) {
     const item = questionItems[i];
@@ -800,10 +1039,10 @@ function render() {
       html += `</div></div>`;
     } else if (item.type === 'question') {
       html += `
-        <label class="question-item" data-module-id="${item.moduleId}">
+        <label class="question-item" data-module-id="${item.moduleId}" data-question-idx="${item.idx}"
+               onmousedown="startDragSelect(event, ${item.idx})" onmouseenter="handleDragSelect(${item.idx})">
           <input type="checkbox" ${selectedQuestions.includes(item.idx) ? 'checked' : ''} onchange="toggleQuestion(${item.idx})">
           <span>${item.title}</span>
-          <span class="type-tag">${item.isMulti ? 'multi' : 'single'}</span>
           <button class="add-module-btn" onclick="addModuleAfterQuestion(${item.idx})" title="Add module after this">+</button>
         </label>`;
     }
@@ -817,15 +1056,25 @@ function render() {
 function renderSelectedGroups() {
   const container = document.getElementById('selectedGroups');
   if (!container) return;
-  container.innerHTML = groups.map((g, i) => `
-    <div class="group-tag selected" draggable="true"
-         ondragstart="handleGroupDragStart(event, ${i})"
-         ondragover="handleGroupDragOver(event, ${i})"
-         ondragend="handleGroupDragEnd(event)">
-      <span class="drag-handle">☰</span>
-      <span>${g.name}</span>
-    </div>
-  `).join('');
+
+  // 计算每个表头的样本数量
+  const grpData = groupRowsCustom(rows, groups);
+
+  container.innerHTML = groups.map((g, i) => {
+    const count = grpData[g.name] ? grpData[g.name].length : 0;
+    return `
+      <div class="group-tag selected" draggable="true"
+           ondragstart="handleGroupDragStart(event, ${i})"
+           ondragover="handleGroupDragOver(event, ${i})"
+           ondragend="handleGroupDragEnd(event)">
+        <span class="drag-handle">☰</span>
+        <span>${g.name}</span>
+        <span style="opacity:0.6; font-size:11px; margin-left:4px;">(${count})</span>
+        <span class="group-action-btn" onclick="openGroupEditor(${i})" title="编辑">✎</span>
+        <span class="group-action-btn" onclick="deleteGroup(${i})" title="删除">×</span>
+      </div>
+    `;
+  }).join('');
 }
 
 // ==================== CONFIG ====================
@@ -839,18 +1088,26 @@ function loadSavedConfig() {
     const saved = localStorage.getItem('survey_analysis_config');
     if (saved) {
       const data = JSON.parse(saved);
-      // Only restore grouping if the column index is still valid in the new file
-      if (data.groupingColIdx !== null && data.groupingColIdx !== undefined && data.groupingColIdx < headers.length) {
-        groupingColIdx = data.groupingColIdx;
-      } else {
-        groupingColIdx = null;
-      }
-      // Only restore groups if groupingColIdx is valid
-      if (groupingColIdx !== null && data.groups && Array.isArray(data.groups)) {
-        groups = data.groups;
+
+      // 兼容旧格式：conditions: [[colIdx, val]] → 新格式：conditions: [{colIdx, values}]
+      if (data.groups && Array.isArray(data.groups)) {
+        groups = data.groups.map(g => {
+          if (g.conditions && g.conditions.length > 0) {
+            // 检查是否是旧格式（数组的第一个元素是数组）
+            if (Array.isArray(g.conditions[0])) {
+              // 旧格式转换为新格式
+              return {
+                name: g.name,
+                conditions: [{ colIdx: g.conditions[0][0], values: [g.conditions[0][1]] }]
+              };
+            }
+          }
+          return g; // 已经是新格式
+        });
       } else {
         groups = [];
       }
+
       if (data.selectedQuestions) selectedQuestions = data.selectedQuestions;
       if (data.config) config = data.config;
       // Restore modules or initialize
@@ -872,6 +1129,8 @@ function resetConfig() {
   selectedQuestions = headers.map((_, i) => i);
   groupingColIdx = null;
   config = { groups: [], ordered: {}, mean_cols: {}, multi_idx: [] };
+  editingGroupIndex = -1;
+  editingConditions = [];
   initModules();
   localStorage.removeItem('survey_analysis_config');
   render();
@@ -952,8 +1211,15 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('selectAllBtn').addEventListener('click', selectAllQuestions);
   document.getElementById('selectNoneBtn').addEventListener('click', selectNoneQuestions);
   document.getElementById('downloadBtn').addEventListener('click', downloadExcel);
-  document.getElementById('groupColSelect').addEventListener('change', handleGroupColChange);
+  document.getElementById('addGroupBtn').addEventListener('click', () => openGroupEditor(-1));
+  document.getElementById('addConditionBtn').addEventListener('click', addCondition);
+  document.getElementById('saveGroupBtn').addEventListener('click', saveGroup);
+  document.getElementById('cancelGroupBtn').addEventListener('click', cancelGroupEditor);
+
+  // 全局 mouseup 事件结束拖拽选择
+  document.addEventListener('mouseup', endDragSelect);
 
   render();
+  initGroupColSearch();
   loadSavedConfig();
 });

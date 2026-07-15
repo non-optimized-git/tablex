@@ -44,15 +44,28 @@
 
   <div class="card" id="groupSelectorCard" style="display:none">
     <h3>表头</h3>
-    <select id="groupColSelect">
-      <option value="">选择表头</option>
-    </select>
+    <div class="search-select" id="groupColSearchSelect">
+      <input type="text" id="groupColInput" placeholder="搜索或选择列..." autocomplete="off">
+      <div class="search-select-dropdown" id="groupColDropdown"></div>
+      <input type="hidden" id="groupColSelect" value="">
+    </div>
     <div id="groupValuesContainer" style="display:none">
       <p class="label-text">数值</p>
       <div class="group-values" id="groupValues"></div>
-      <div id="selectedGroupsContainer" style="display:none; margin-top:24px">
-        <p class="label-text">已选（拖动排序）</p>
-        <div class="selected-groups" id="selectedGroups"></div>
+    </div>
+    <div id="selectedGroupsContainer" style="display:none; margin-top:24px">
+      <p class="label-text">已选表头（拖动排序）</p>
+      <div class="selected-groups" id="selectedGroups"></div>
+    </div>
+    <div id="complexGroupSection" style="display:none; margin-top:24px; padding-top:24px; border-top:1px solid var(--border); justify-content: flex-end;">
+      <button class="btn btn-secondary" id="addGroupBtn">+ 添加复杂表头</button>
+      <div id="groupEditorForm" style="display:none">
+        <div id="groupConditions"></div>
+        <div style="display:flex; gap:12px; margin-top:16px;">
+          <button class="btn btn-secondary" id="addConditionBtn">+ 添加条件</button>
+          <button class="btn btn-primary" id="saveGroupBtn">保存表头</button>
+          <button class="btn btn-secondary" id="cancelGroupBtn">取消</button>
+        </div>
       </div>
     </div>
   </div>
@@ -61,7 +74,6 @@
     <div class="result-header">
       <h3>题目</h3>
       <div class="actions">
-        <span id="questionCount">0 已选</span>
         <button class="select-all" id="selectAllBtn">全选</button>
         <button class="select-all" id="selectNoneBtn">全不选</button>
         <button class="btn btn-primary" id="downloadBtn" disabled>下载 Excel</button>
