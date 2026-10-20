@@ -92,6 +92,9 @@ tablex/
 | `isMultiChoice(allRows, colIdx)` | 判断多选题（20%+ 含逗号） |
 | `groupRowsCustom(allRows, customGroups)` | 按表头条件过滤行（列内OR，列间AND） |
 | `safe(v)` | 空值归一化（null/空字符串 → null） |
+| `extractScoreValue(val)` | 从选项提取数值分数（如 "5.0-非常满意" → 5.0） |
+| `isScoreQuestion(allRows, colIdx)` | 判断是否为量表题（所有选项均为数值） |
+| `calcWeightedMean(allRows, colIdx)` | 计算加权平均分 Σ(分数×人数)/总人数 |
 
 ### 表头编辑器
 | 函数 | 作用 |
@@ -152,6 +155,13 @@ tablex/
 | Table 3 | 百分比 | 绿=最高，红=最低（仅当 maxPct ≠ minPct）|
 
 布局：`选项 | Total | 分组1 | 分组2 | ...` × 3
+
+### 行结构
+1. **标题行**：题干 + 题目信息（单选/多选）
+2. **表头行**：选项、Total、各分组名（底色 `#DEE0E3` 灰色）
+3. **base 行**：有效用户数（斜体，棕色文字）
+4. **平均分行**（仅量表题）：加权平均分（暖琥珀底色 `#FFF3E0`，加粗，两位小数）
+5. **数据行**：各选项的计数或百分比
 
 ### 排序规则
 - **题目顺序**：按 Excel 原始列顺序

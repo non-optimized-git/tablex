@@ -1,0 +1,1845 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TableX · 问卷数据分析</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;600&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<!-- SheetJS for parsing -->
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<!-- ExcelJS for export -->
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<style>
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg: #FAF7F2;
+  --card: #FFFDF9;
+  --border: #E8E0D4;
+  --text: #3E2723;
+  --muted: #A89888;
+  --light: #F5F0E8;
+  --accent: #5C4033;
+  --accent-hover: #3E2723;
+  --highlight: #C4A87C;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #C4B8A8; border-radius: 2px; }
+
+input:focus, select:focus, button:focus {
+  outline: none;
+}
+
+/* ========== HEADER ========== */
+header {
+  background: white;
+  border-bottom: 1px solid var(--border);
+  padding: 48px 24px;
+}
+
+.header-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.logo h1 {
+  font-size: 56px;
+  font-weight: 300;
+  letter-spacing: 0.2em;
+  color: var(--text);
+  margin-bottom: 8px;
+  font-family: 'Cormorant Garamond', Georgia, serif;
+}
+
+.logo p {
+  font-size: 13px;
+  color: var(--muted);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.header-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 32px;
+}
+
+/* ========== BUTTONS ========== */
+.btn {
+  padding: 10px 20px;
+  border-radius: 2px;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: white;
+  border: 1px solid var(--accent);
+}
+
+.btn-primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.btn-primary:disabled {
+  background: #C4B8A8;
+  border-color: #C4B8A8;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.btn-secondary:hover {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: white;
+}
+
+/* ========== MAIN ========== */
+main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 48px 24px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 32px;
+  margin-bottom: 24px;
+}
+
+.card h3 {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  margin-bottom: 24px;
+}
+
+/* ========== UPLOAD ZONE ========== */
+.upload-zone {
+  border: 1px dashed var(--border);
+  border-radius: 2px;
+  padding: 32px;
+  text-align: center;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.upload-zone:hover {
+  border-color: var(--accent);
+  background: var(--light);
+}
+
+.upload-zone.dragging {
+  border-color: var(--accent);
+  background: var(--light);
+}
+
+.upload-zone svg {
+  width: 32px;
+  height: 32px;
+  color: var(--muted);
+  margin-bottom: 16px;
+}
+
+.upload-zone p {
+  color: var(--muted);
+  font-size: 13px;
+  letter-spacing: 0.05em;
+}
+
+.upload-zone p strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.upload-zone .hint {
+  font-size: 12px;
+  color: #B8A898;
+  margin-top: 8px;
+}
+
+/* ========== SELECT ========== */
+select {
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  font-size: 14px;
+  background: white;
+  color: var(--text);
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23A89888' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 16px center;
+}
+
+select:focus {
+  border-color: var(--accent);
+}
+
+select option {
+  padding: 8px;
+}
+
+/* ========== SEARCH SELECT ========== */
+.search-select {
+  position: relative;
+}
+
+.search-select input[type="text"] {
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  font-size: 14px;
+  background: white;
+  color: var(--text);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23A89888' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 16px center;
+}
+
+.search-select input[type="text"]:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.search-select-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 300px;
+  overflow-y: auto;
+  background: white;
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 2px 2px;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.search-select-dropdown.show {
+  display: block;
+}
+
+.search-select-option {
+  padding: 10px 16px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text);
+  border-bottom: 1px solid var(--light);
+}
+
+.search-select-option:hover {
+  background: var(--light);
+}
+
+.search-select-option.selected {
+  background: var(--accent);
+  color: white;
+}
+
+.search-select-option .option-count {
+  float: right;
+  opacity: 0.6;
+  font-size: 12px;
+}
+
+/* ========== GROUP ========== */
+.label-text {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-top: 24px;
+  margin-bottom: 12px;
+}
+
+.group-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.group-tag {
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: transparent;
+  color: var(--text);
+}
+
+.group-tag.unselected:hover {
+  border-color: var(--accent);
+}
+
+.group-tag.selected {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.selected-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.drag-handle {
+  cursor: grab;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.dragging-item {
+  opacity: 0.5;
+}
+
+.drag-over-target {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+  background: transparent !important;
+}
+
+.group-action-btn {
+  margin-left: 8px;
+  cursor: pointer;
+  color: white;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.group-action-btn:hover {
+  opacity: 1;
+}
+
+/* ========== QUESTIONS ========== */
+.result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.result-header h3 {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  margin: 0;
+}
+
+.result-header .actions {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+#questionCount {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 16px;
+}
+
+.question-module {
+  margin-bottom: 32px;
+}
+
+.module-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.module-name-input {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  border: none;
+  background: transparent;
+  padding: 4px 0;
+  flex: 1;
+}
+
+.module-name-input:focus {
+  outline: none;
+  border-bottom: 1px solid var(--accent);
+}
+
+.module-delete-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 18px;
+  padding: 4px 8px;
+  transition: color 0.2s;
+}
+
+.module-delete-btn:hover {
+  color: var(--accent);
+}
+
+.question-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.question-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: 1px solid transparent;
+}
+
+.question-item:hover {
+  background: var(--light);
+  border-color: var(--accent);
+}
+
+.question-item input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.question-item span {
+  font-size: 14px;
+  color: var(--text);
+  flex: 1;
+}
+
+.question-item .type-tag {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.add-module-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 16px;
+  border-radius: 2px;
+  margin-left: auto;
+  opacity: 0;
+  transition: all 0.2s;
+}
+
+.question-item:hover .add-module-btn {
+  opacity: 1;
+}
+
+.add-module-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.select-all {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition: color 0.2s;
+}
+
+.select-all:hover {
+  color: var(--accent);
+}
+
+/* ========== GROUP EDITOR ========== */
+.condition-item {
+  margin-bottom: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--light);
+}
+
+.condition-item select:focus {
+  border-color: var(--accent);
+}
+
+.condition-item select {
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.condition-item .group-values {
+  margin-top: 8px;
+}
+
+/* ========== FOOTER ========== */
+footer {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="logo">
+           <h1>TableX</h1>
+      <p>Intelligent Survey Tool</p>
+    </div>
+    <div class="header-actions">
+      <label class="btn btn-secondary" style="cursor:pointer">
+        导入配置
+        <input type="file" accept=".json" style="display:none" id="configInput">
+      </label>
+      <button class="btn btn-secondary" id="exportConfigBtn">导出配置</button>
+      <button class="btn btn-secondary" id="resetConfigBtn">重置</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="card" id="uploadCard">
+    <div class="upload-zone" id="uploadZone">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m6.75 12l-3-3m0 0l-3 3m3-3v6m-1.5-15H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+      </svg>
+      <p id="uploadHint">Drop your Excel file here</p>
+      <p class="hint">or click to browse</p>
+      <input type="file" id="fileInput" accept=".xlsx,.xls" style="display:none">
+    </div>
+  </div>
+
+  <div class="card" id="groupSelectorCard" style="display:none">
+    <h3>表头</h3>
+    <div class="search-select" id="groupColSearchSelect">
+      <input type="text" id="groupColInput" placeholder="搜索或选择列..." autocomplete="off">
+      <div class="search-select-dropdown" id="groupColDropdown"></div>
+      <input type="hidden" id="groupColSelect" value="">
+    </div>
+    <div id="groupValuesContainer" style="display:none">
+      <p class="label-text">数值</p>
+      <div class="group-values" id="groupValues"></div>
+    </div>
+    <div id="selectedGroupsContainer" style="display:none; margin-top:24px">
+      <p class="label-text">已选表头（拖动排序）</p>
+      <div class="selected-groups" id="selectedGroups"></div>
+    </div>
+    <div id="complexGroupSection" style="display:none; margin-top:24px; padding-top:24px; border-top:1px solid var(--border); justify-content: flex-end;">
+      <button class="btn btn-secondary" id="addGroupBtn">+ 添加复杂表头</button>
+      <div id="groupEditorForm" style="display:none">
+        <div id="groupConditions"></div>
+        <div style="display:flex; gap:12px; margin-top:16px;">
+          <button class="btn btn-secondary" id="addConditionBtn">+ 添加条件</button>
+          <button class="btn btn-primary" id="saveGroupBtn">保存表头</button>
+          <button class="btn btn-secondary" id="cancelGroupBtn">取消</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+   <div class="card" id="questionSelectorCard" style="display:none">
+    <div class="result-header">
+      <h3>题目</h3>
+      <div class="actions">
+        <button class="select-all" id="selectAllBtn">全选</button>
+        <button class="select-all" id="selectNoneBtn">全不选</button>
+        <button class="btn btn-primary" id="downloadBtn" disabled>下载 Excel</button>
+      </div>
+    </div>
+    <div id="questionList"></div>
+  </div>
+</main>
+
+<footer>TableX · 问卷分析工具</footer>
+
+<script>
+// ==================== STATE ====================
+let headers = [];
+let rows = [];
+let selectedQuestions = [];
+let groupingColIdx = null;
+let groups = [];
+let config = { groups: [], ordered: {}, mean_cols: {}, multi_idx: [] };
+// modules: [{id: number, name: string, questionIdxs: number[]}]
+let modules = [];
+let nextModuleId = 1;
+let uploadedFileName = ''; // 上传的文件名（不含扩展名）
+// 表头编辑器状态
+let editingGroupIndex = -1; // -1 表示新建，>=0 表示编辑
+let editingConditions = []; // [{colIdx: number, values: string[]}]
+
+// 拖拽选择状态
+let isDraggingSelect = false;
+let dragSelectValue = false; // true=选中, false=取消
+
+// ==================== CONSTANTS ====================
+const MODULE_KEYWORDS = {
+  '用户画像': ['性别', '年龄', '职业', '学历', '收入', '城市'],
+  '购车意向': ['购车', '买车', '换车', '预算', '品牌'],
+  '智能驾驶': ['智驾', '自动驾驶', '辅助驾驶', '泊车', '车道'],
+  '家庭用车': ['家庭', '孩子', '家人', '空间'],
+  '产品体验': ['满意度', '体验', '质量', '服务', '售后']
+};
+
+function detectModule(header) {
+  if (!header) return '其他';
+  for (const [mod, keywords] of Object.entries(MODULE_KEYWORDS)) {
+    for (const kw of keywords) {
+      if (header.includes(kw)) return mod;
+    }
+  }
+  return '其他';
+}
+
+function cleanHeader(header) {
+  if (!header) return '';
+  return String(header).replace(/<[^>]*>/g, '').replace(/^[a-fA-F0-9]{2,6}[\s_#:]+/, '').trim();
+}
+
+function getShortTitle(header) {
+  if (!header) return '';
+  let s = String(header).replace(/<[^>]*>/g, '').replace(/^[a-fA-F0-9]{6}">/, '').trim();
+  // Remove type tag
+  s = s.replace(/[（(]\s*(单选|多选|量表|矩阵|排序|填空|开放)\s*[）)]/g, '');
+  // Remove leading question phrases
+  s = s.replace(/^(请问\s*你(目前|目前对|是否|进店时|进店后|在进店看过)?\s*)/, '');
+  s = s.replace(/^(请问\s*新乐道L60的?\s*)/, '');
+  s = s.replace(/^(你的?|您)\s*/, '');
+  s = s.replace(/^(请问\s*)/, '');
+  // Remove brand name
+  s = s.replace(/新乐道L60/gi, '');
+  // Remove trailing question phrases
+  s = s.replace(/\s*哪些\s*[?？].*$/, '');
+  s = s.replace(/\s*什么\s*[?？].*$/, '');
+  s = s.replace(/\s*了吗\s*[?？]?.*$/, '');
+  s = s.replace(/[?？].*$/, '');
+  s = s.replace(/\s*让你比较犹豫\s*$/, '');
+  s = s.replace(/\s*让你比较不满意\s*$/, '');
+  s = s.replace(/\s*有没有\s*[?？]?.*$/, '');
+  s = s.replace(/了\s*$/, '');
+  s = s.replace(/[是的了]\s*$/, '');
+  s = s.replace(/^[a-fA-F0-9]{2,6}[\s_#:]+/, '');
+  s = s.replace(/\s+/g, ' ').trim();
+  if (!s) s = String(header).slice(0, 20);
+  return s.length > 16 ? s.slice(0, 16) : s;
+}
+
+// ==================== EXCEL PARSER ====================
+function parseExcel(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const range = XLSX.utils.decode_range(sheet['!ref']);
+
+        const headers = [];
+        for (let c = range.s.c; c <= range.e.c; c++) {
+          const addr = XLSX.utils.encode_cell({ r: 0, c });
+          headers.push(sheet[addr]?.v ?? null);
+        }
+
+        const rows = [];
+        for (let r = 1; r <= range.e.r; r++) {
+          const row = [];
+          let hasValue = false;
+          for (let c = range.s.c; c <= range.e.c; c++) {
+            const addr = XLSX.utils.encode_cell({ r, c });
+            const val = sheet[addr]?.v ?? null;
+            row.push(val);
+            if (val !== null && val !== '') hasValue = true;
+          }
+          if (hasValue) rows.push(row);
+        }
+        resolve({ headers, rows });
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.onerror = () => reject(new Error('读取文件失败'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+// ==================== ANALYZER ====================
+function safe(v) {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim();
+  return s || null;
+}
+
+function splitOpts(val) {
+  if (!val) return [];
+  return String(val).split(',').map(o => o.trim()).filter(o => o);
+}
+
+function groupRowsCustom(allRows, customGroups) {
+  const result = {};
+  for (const groupDef of customGroups) {
+    const groupName = groupDef.name;
+    const conditions = groupDef.conditions;
+    result[groupName] = [];
+    for (const row of allRows) {
+      let match = true;
+      // 列间 AND 关系
+      for (const cond of conditions) {
+        const val = safe(row[cond.colIdx]);
+        // 列内 OR 关系：满足任一值即可
+        if (!cond.values.includes(val)) {
+          match = false;
+          break;
+        }
+      }
+      if (match) result[groupName].push(row);
+    }
+  }
+  return result;
+}
+
+function countOptions(allRows, colIdx, isMulti) {
+  const counts = {};
+  for (const row of allRows) {
+    const val = safe(row[colIdx]);
+    if (val === null) continue;
+    // Always split by English comma (regardless of isMulti) if comma present
+    if (String(val).includes(',')) {
+      for (const opt of splitOpts(val)) {
+        counts[opt] = (counts[opt] || 0) + 1;
+      }
+    } else {
+      counts[val] = (counts[val] || 0) + 1;
+    }
+  }
+  return counts;
+}
+
+function countUsers(allRows, colIdx) {
+  return allRows.filter(row => safe(row[colIdx]) !== null).length;
+}
+
+function isMultiChoice(allRows, colIdx) {
+  let total = 0, hasEnglishComma = 0;
+  for (const row of allRows) {
+    const val = row[colIdx];
+    if (val === null || val === undefined) continue;
+    total++;
+    if (String(val).includes(',')) hasEnglishComma++;
+  }
+  return total > 0 && hasEnglishComma > total * 0.2;
+}
+
+function r3(x) {
+  if (x === null || x === undefined) return null;
+  return x < 0.0005 ? 0 : Math.round(x * 1000) / 1000;
+}
+
+// 从选项值中提取数值分数，如 "5.0-非常满意" → 5.0，"4.5" → 4.5
+function extractScoreValue(val) {
+  if (val === null || val === undefined) return null;
+  const m = String(val).match(/^([\d.]+)/);
+  if (!m) return null;
+  const n = parseFloat(m[1]);
+  return isNaN(n) ? null : n;
+}
+
+// 判断是否为量表题：所有选项都能提取出数值分数
+function isScoreQuestion(allRows, colIdx) {
+  const counts = countOptions(allRows, colIdx, false);
+  const opts = Object.keys(counts);
+  if (opts.length === 0) return false;
+  return opts.every(opt => extractScoreValue(opt) !== null);
+}
+
+// 计算加权平均分：Σ(分数 × 人数) / 总人数
+function calcWeightedMean(allRows, colIdx) {
+  let totalWeight = 0;
+  let totalCount = 0;
+  for (const row of allRows) {
+    const val = safe(row[colIdx]);
+    if (val === null) continue;
+    const parts = String(val).includes(',') ? splitOpts(val) : [val];
+    for (const p of parts) {
+      const score = extractScoreValue(p);
+      if (score !== null) {
+        totalWeight += score;
+        totalCount++;
+      }
+    }
+  }
+  return totalCount > 0 ? totalWeight / totalCount : null;
+}
+
+// ==================== EXCEL WRITER (ExcelJS) ====================
+const RED_FILL = 'FFE8CCCC';
+const GREEN_FILL = 'FFD4E8D4';
+const GRAY_FILL = 'FFDEE0E3';
+const BASE_FILL = 'FFA89888';
+const AVG_FILL = 'FFFFF3E0'; // 暖琥珀色，用于平均分行
+
+const BORDER = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
+const FONT_DATA = { name: '微软雅黑', size: 10 };
+const FONT_HEADER = { name: '微软雅黑', size: 10 };
+
+function makeBorder() { return BORDER; }
+
+function makeHeaderStyle(align) {
+  return { font: FONT_HEADER, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: GRAY_FILL } }, alignment: { horizontal: align }, border: BORDER };
+}
+
+function makeDataStyle(align, numFmt) {
+  const s = { font: FONT_DATA, alignment: { horizontal: align }, border: BORDER };
+  if (numFmt) s.numFmt = numFmt;
+  return s;
+}
+
+function makeFillStyle(color, align, numFmt) {
+  const s = { font: FONT_DATA, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: color } }, alignment: { horizontal: align }, border: BORDER };
+  if (numFmt) s.numFmt = numFmt;
+  return s;
+}
+
+function generateExcelWorkbook() {
+  const questions = selectedQuestions;
+  if (!questions.length || !headers.length || !rows.length) return null;
+
+  const orderedGroups = groups.map(g => g.name);
+  const numGroups = orderedGroups.length;
+  const hasGroups = numGroups > 0;
+
+  const table2Start = 2 + numGroups + 1;
+  const table3Start = table2Start + 2 + numGroups + 1;
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'TableX';
+  wb.created = new Date();
+
+  // Build sheets per module
+  for (const mod of modules) {
+    const modQuestions = mod.questionIdxs.filter(idx => selectedQuestions.includes(idx));
+    if (modQuestions.length === 0) continue;
+
+    const rawName = mod.name || '题目';
+    let safeName = rawName.replace(/[\[\]:\\/?*]/g, '_').replace(/\|/g, '_').slice(0, 31) || '题目';
+    // Ensure unique sheet name
+    let idx = 1;
+    const usedSheets = wb.worksheets.map(ws => ws.name);
+    while (usedSheets.includes(safeName)) {
+      safeName = rawName.replace(/[\[\]:\\/?*]/g, '_').replace(/\|/g, '_').slice(0, 28) + '_' + idx;
+      idx++;
+    }
+    const ws = wb.addWorksheet(safeName);
+
+    // Set column widths
+    const colWidths = [];
+    if (!hasGroups) {
+      colWidths.push(
+        { width: 1 }, { width: 18 }, { width: 10 },
+        { width: 1 }, { width: 1 },
+        { width: 18 }, { width: 10 },
+        { width: 1 }, { width: 1 },
+        { width: 18 }, { width: 10 }
+      );
+    } else {
+      const lastCol = 3 * numGroups + 8;
+      colWidths.length = 0;
+      for (let c = 0; c < lastCol; c++) {
+        if (c === 0 || c === numGroups + 3 || c === 2 * (numGroups + 3)) colWidths.push({ width: 18 });
+        else if (c === numGroups + 2 || c === 2 * (numGroups + 2) + 1) colWidths.push({ width: 1 });
+        else colWidths.push({ width: 10 });
+      }
+    }
+    ws.columns = colWidths;
+
+    let firstQuestion = true;
+    for (const colIdx of modQuestions) {
+      if (!firstQuestion) {
+        ws.addRow();
+      }
+      firstQuestion = false;
+      const header = headers[colIdx] || `列${colIdx}`;
+      const title = getShortTitle(header);
+      const fullTitle = cleanHeader(header);
+      const isMulti = isMultiChoice(rows, colIdx);
+
+      const titleRow = ws.addRow();
+      const subRow = ws.addRow();
+      if (!hasGroups) {
+        const t1 = { opt: 2, tot: 3 };
+        const t2 = { opt: 6, tot: 7 };
+        const t3 = { opt: 10, tot: 11 };
+        const tables = [t1, t2, t3];
+        for (const t of tables) {
+          const cell = titleRow.getCell(t.opt);
+          cell.value = title;
+          cell.font = { name: '微软雅黑', size: 14, bold: true };
+          cell.alignment = { horizontal: 'left' };
+        }
+        for (const t of tables) {
+          const cell = subRow.getCell(t.opt);
+          cell.value = `题目: ${fullTitle} (${isMulti ? '多选' : '单选'})`;
+          cell.font = { name: '微软雅黑', size: 10 };
+          cell.alignment = { horizontal: 'left' };
+        }
+      } else {
+        for (let table = 0; table < 3; table++) {
+          const tableStart = 1 + table * (numGroups + 3);
+          const titleCell = titleRow.getCell(tableStart);
+          titleCell.value = title;
+          titleCell.font = { name: '微软雅黑', size: 14, bold: true };
+          titleCell.alignment = { horizontal: 'left' };
+
+          const subCell = subRow.getCell(tableStart);
+          subCell.value = `题目: ${fullTitle} (${isMulti ? '多选' : '单选'})`;
+          subCell.font = { name: '微软雅黑', size: 10 };
+          subCell.alignment = { horizontal: 'left' };
+        }
+      }
+
+      if (!hasGroups) {
+        const t1 = { opt: 2, tot: 3 };
+        const t2 = { opt: 6, tot: 7 };
+        const t3 = { opt: 10, tot: 11 };
+
+        const counts = countOptions(rows, colIdx, isMulti);
+        const totalUsers = countUsers(rows, colIdx);
+        const allOpts = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+
+        const hRow = ws.addRow();
+        for (const t of [t1, t2, t3]) {
+          hRow.getCell(t.opt).value = '选项'; hRow.getCell(t.opt).style = makeHeaderStyle('left');
+          hRow.getCell(t.tot).value = 'Total'; hRow.getCell(t.tot).style = makeHeaderStyle('center');
+        }
+
+        const bRow = ws.addRow();
+        for (const t of [t1, t2, t3]) {
+          const c1 = bRow.getCell(t.opt); c1.value = 'base'; c1.style = makeDataStyle('left'); c1.font = { name: '微软雅黑', size: 10, italic: true, color: { argb: BASE_FILL } };
+          const c2 = bRow.getCell(t.tot); c2.value = totalUsers; c2.style = makeDataStyle('center'); c2.font = { name: '微软雅黑', size: 10, italic: true, color: { argb: BASE_FILL } };
+        }
+
+        // 平均分行（仅量表题）
+        if (isScoreQuestion(rows, colIdx)) {
+          const avgMean = calcWeightedMean(rows, colIdx);
+          const avgRow = ws.addRow();
+          for (const t of [t1, t2, t3]) {
+            const c1 = avgRow.getCell(t.opt); c1.value = '平均分'; c1.style = makeFillStyle(AVG_FILL, 'left'); c1.font = { name: '微软雅黑', size: 10, bold: true };
+            const c2 = avgRow.getCell(t.tot); c2.value = avgMean !== null ? Math.round(avgMean * 100) / 100 : ''; c2.style = makeFillStyle(AVG_FILL, 'center'); c2.font = { name: '微软雅黑', size: 10, bold: true }; c2.numFmt = '0.00';
+          }
+        }
+
+        const pctByOpt = allOpts.map(opt => {
+          const val = counts[opt] || 0;
+          return totalUsers > 0 ? r3(val / totalUsers) : 0;
+        });
+        const maxPct = Math.max(...pctByOpt);
+        const minPct = Math.min(...pctByOpt);
+
+        for (let oi = 0; oi < allOpts.length; oi++) {
+          const opt = allOpts[oi];
+          const val = counts[opt] || 0;
+          const pct = pctByOpt[oi];
+
+          const dRow = ws.addRow();
+          dRow.getCell(t1.opt).value = opt; dRow.getCell(t1.opt).style = makeDataStyle('left');
+          dRow.getCell(t1.tot).value = val; dRow.getCell(t1.tot).style = makeDataStyle('center');
+
+          dRow.getCell(t2.opt).value = opt; dRow.getCell(t2.opt).style = makeDataStyle('left');
+          dRow.getCell(t2.tot).value = pct; dRow.getCell(t2.tot).style = makeDataStyle('center', '0.0%');
+
+          dRow.getCell(t3.opt).value = opt; dRow.getCell(t3.opt).style = makeDataStyle('left');
+          if (maxPct !== minPct) {
+            if (pct === maxPct) dRow.getCell(t3.tot).style = makeFillStyle(GREEN_FILL, 'center', '0.0%');
+            else if (pct === minPct) dRow.getCell(t3.tot).style = makeFillStyle(RED_FILL, 'center', '0.0%');
+            else dRow.getCell(t3.tot).style = makeDataStyle('center', '0.0%');
+          } else {
+            dRow.getCell(t3.tot).style = makeDataStyle('center', '0.0%');
+          }
+          dRow.getCell(t3.tot).value = pct;
+        }
+
+      } else {
+        const grpData = groupRowsCustom(rows, groups);
+        const groupCounts = {};
+        const groupUsers = {};
+        for (const g of orderedGroups) {
+          groupCounts[g] = countOptions(grpData[g], colIdx, isMulti);
+          groupUsers[g] = countUsers(grpData[g], colIdx);
+        }
+        const totalCounts = countOptions(rows, colIdx, isMulti);
+        const totalAllUsers = countUsers(rows, colIdx);
+
+        const allOpts = Object.keys(totalCounts).sort((a, b) => totalCounts[b] - totalCounts[a]);
+
+        const hRow = ws.addRow();
+        let cellIdx = 1;
+        hRow.getCell(cellIdx++).value = '选项'; hRow.getCell(cellIdx - 1).style = makeHeaderStyle('left');
+        hRow.getCell(cellIdx++).value = 'Total'; hRow.getCell(cellIdx - 1).style = makeHeaderStyle('center');
+        for (let i = 0; i < numGroups; i++) { hRow.getCell(cellIdx++).value = orderedGroups[i]; hRow.getCell(cellIdx - 1).style = makeHeaderStyle('center'); }
+        cellIdx++;
+        hRow.getCell(cellIdx++).value = '选项'; hRow.getCell(cellIdx - 1).style = makeHeaderStyle('left');
+        hRow.getCell(cellIdx++).value = 'Total'; hRow.getCell(cellIdx - 1).style = makeHeaderStyle('center');
+        for (let i = 0; i < numGroups; i++) { hRow.getCell(cellIdx++).value = orderedGroups[i]; hRow.getCell(cellIdx - 1).style = makeHeaderStyle('center'); }
+        cellIdx++;
+        hRow.getCell(cellIdx++).value = '选项'; hRow.getCell(cellIdx - 1).style = makeHeaderStyle('left');
+        hRow.getCell(cellIdx++).value = 'Total'; hRow.getCell(cellIdx - 1).style = makeHeaderStyle('center');
+        for (let i = 0; i < numGroups; i++) { hRow.getCell(cellIdx++).value = orderedGroups[i]; hRow.getCell(cellIdx - 1).style = makeHeaderStyle('center'); }
+
+        const bRow = ws.addRow();
+        cellIdx = 1;
+        const applyBaseStyle = (cell, value) => { cell.value = value; cell.style = makeDataStyle('center'); cell.font = { name: '微软雅黑', size: 10, italic: true, color: { argb: BASE_FILL } }; };
+        const applyBaseStyleLeft = (cell, value) => { cell.value = value; cell.style = makeDataStyle('left'); cell.font = { name: '微软雅黑', size: 10, italic: true, color: { argb: BASE_FILL } }; };
+        applyBaseStyleLeft(bRow.getCell(cellIdx++), 'base');
+        applyBaseStyle(bRow.getCell(cellIdx++), totalAllUsers);
+        for (let i = 0; i < numGroups; i++) { applyBaseStyle(bRow.getCell(cellIdx++), groupUsers[orderedGroups[i]] || 0); }
+        cellIdx++;
+        for (let t = 0; t < 2; t++) {
+          applyBaseStyleLeft(bRow.getCell(cellIdx++), 'base');
+          applyBaseStyle(bRow.getCell(cellIdx++), totalAllUsers);
+          for (let i = 0; i < numGroups; i++) { applyBaseStyle(bRow.getCell(cellIdx++), groupUsers[orderedGroups[i]] || 0); }
+          if (t < 1) cellIdx++;
+        }
+
+        // 平均分行（仅量表题）
+        if (isScoreQuestion(rows, colIdx)) {
+          const avgRow = ws.addRow();
+          cellIdx = 1;
+          const avgStyle = (cell, value) => { cell.value = value; cell.style = makeFillStyle(AVG_FILL, 'center'); cell.font = { name: '微软雅黑', size: 10, bold: true }; cell.numFmt = '0.00'; };
+          const avgStyleLeft = (cell, value) => { cell.value = value; cell.style = makeFillStyle(AVG_FILL, 'left'); cell.font = { name: '微软雅黑', size: 10, bold: true }; };
+          const totalAvg = calcWeightedMean(rows, colIdx);
+          const totalAvgR = totalAvg !== null ? Math.round(totalAvg * 100) / 100 : '';
+
+          // Table 1
+          avgStyleLeft(avgRow.getCell(cellIdx++), '平均分');
+          avgStyle(avgRow.getCell(cellIdx++), totalAvgR);
+          for (let i = 0; i < numGroups; i++) {
+            const gAvg = calcWeightedMean(grpData[orderedGroups[i]], colIdx);
+            avgStyle(avgRow.getCell(cellIdx++), gAvg !== null ? Math.round(gAvg * 100) / 100 : '');
+          }
+          cellIdx++; // spacer
+          // Table 2 & 3
+          for (let t = 0; t < 2; t++) {
+            avgStyleLeft(avgRow.getCell(cellIdx++), '平均分');
+            avgStyle(avgRow.getCell(cellIdx++), totalAvgR);
+            for (let i = 0; i < numGroups; i++) {
+              const gAvg = calcWeightedMean(grpData[orderedGroups[i]], colIdx);
+              avgStyle(avgRow.getCell(cellIdx++), gAvg !== null ? Math.round(gAvg * 100) / 100 : '');
+            }
+            if (t < 1) cellIdx++; // spacer between tables
+          }
+        }
+
+        for (const opt of allOpts) {
+          const pcts = {};
+          for (const g of orderedGroups) {
+            const val = groupCounts[g][opt] || 0;
+            const total = groupUsers[g] || 0;
+            pcts[g] = total > 0 ? r3(val / total) : 0;
+          }
+          const totalVal = totalCounts[opt] || 0;
+          const totalPct = totalAllUsers > 0 ? r3(totalVal / totalAllUsers) : 0;
+
+          const maxPct = Math.max(...Object.values(pcts), totalPct);
+          const minPct = Math.min(...Object.values(pcts), totalPct);
+
+          const dRow = ws.addRow();
+          cellIdx = 1;
+          dRow.getCell(cellIdx++).value = opt; dRow.getCell(cellIdx - 1).style = makeDataStyle('left');
+          dRow.getCell(cellIdx++).value = totalVal; dRow.getCell(cellIdx - 1).style = makeDataStyle('center');
+          for (let i = 0; i < numGroups; i++) { dRow.getCell(cellIdx++).value = groupCounts[orderedGroups[i]][opt] || 0; dRow.getCell(cellIdx - 1).style = makeDataStyle('center'); }
+          cellIdx++;
+          dRow.getCell(cellIdx++).value = opt; dRow.getCell(cellIdx - 1).style = makeDataStyle('left');
+          dRow.getCell(cellIdx++).value = totalPct; dRow.getCell(cellIdx - 1).style = makeDataStyle('center', '0.0%');
+          for (let i = 0; i < numGroups; i++) { dRow.getCell(cellIdx++).value = pcts[orderedGroups[i]]; dRow.getCell(cellIdx - 1).style = makeDataStyle('center', '0.0%'); }
+          cellIdx++;
+          dRow.getCell(cellIdx++).value = opt; dRow.getCell(cellIdx - 1).style = makeDataStyle('left');
+          dRow.getCell(cellIdx++).value = totalPct; dRow.getCell(cellIdx - 1).style = makeDataStyle('center', '0.0%');
+          for (let i = 0; i < numGroups; i++) {
+            const g = orderedGroups[i];
+            const cellPct = pcts[g];
+            if (maxPct !== minPct) {
+              if (cellPct === maxPct) dRow.getCell(cellIdx++).style = makeFillStyle(GREEN_FILL, 'center', '0.0%');
+              else if (cellPct === minPct) dRow.getCell(cellIdx++).style = makeFillStyle(RED_FILL, 'center', '0.0%');
+              else dRow.getCell(cellIdx++).style = makeDataStyle('center', '0.0%');
+            } else {
+              dRow.getCell(cellIdx++).style = makeDataStyle('center', '0.0%');
+            }
+            dRow.getCell(cellIdx - 1).value = cellPct;
+          }
+        }
+      }
+    }
+  }
+
+  return wb;
+}
+
+async function downloadExcel() {
+  try {
+    const wb = generateExcelWorkbook();
+    if (!wb) {
+      alert('请先上传 Excel 文件并选择题目');
+      return;
+    }
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const now = new Date();
+    const timeStr = String(now.getMonth() + 1).padStart(2, '0') +
+                    String(now.getDate()).padStart(2, '0') +
+                    String(now.getHours()).padStart(2, '0') +
+                    String(now.getMinutes()).padStart(2, '0');
+    a.download = uploadedFileName ? `${uploadedFileName}_${timeStr}.xlsx` : `${timeStr}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error('Excel export error:', err);
+    alert('导出失败: ' + err.message);
+  }
+}
+
+// ==================== MODULE MANAGEMENT ====================
+function initModules() {
+  modules = [];
+  if (selectedQuestions.length > 0) {
+    modules.push({ id: nextModuleId++, name: '题目', questionIdxs: [...selectedQuestions] });
+  }
+}
+
+function addModuleAfterQuestion(beforeIdx) {
+  const currentModule = modules.find(m => m.questionIdxs.includes(beforeIdx));
+  if (!currentModule) return;
+
+  const pos = currentModule.questionIdxs.indexOf(beforeIdx);
+
+  const newModule = {
+    id: nextModuleId++,
+    name: `模块 ${modules.length + 1}`,
+    questionIdxs: currentModule.questionIdxs.slice(pos + 1)
+  };
+
+  currentModule.questionIdxs = currentModule.questionIdxs.slice(0, pos + 1);
+
+  const moduleIdx = modules.indexOf(currentModule);
+  modules.splice(moduleIdx + 1, 0, newModule);
+
+  saveConfig();
+  render();
+}
+
+function moveQuestionToModule(questionIdx, moduleId) {
+  for (const m of modules) {
+    m.questionIdxs = m.questionIdxs.filter(i => i !== questionIdx);
+  }
+  const target = modules.find(m => m.id === moduleId);
+  if (target) {
+    target.questionIdxs.push(questionIdx);
+  }
+  saveConfig();
+}
+
+function renameModule(moduleId, newName) {
+  const m = modules.find(m => m.id === moduleId);
+  if (m) {
+    m.name = newName;
+    saveConfig();
+  }
+}
+
+function deleteModule(moduleId) {
+  if (modules.length <= 1) return;
+  const m = modules.find(m => m.id === moduleId);
+  if (!m) return;
+  const idx = modules.indexOf(m);
+  const targetModule = modules[idx - 1] || modules[idx + 1];
+  if (targetModule) {
+    for (const qIdx of m.questionIdxs) {
+      const originalPos = selectedQuestions.indexOf(qIdx);
+      let insertIdx = 0;
+      for (let i = 0; i < targetModule.questionIdxs.length; i++) {
+        if (selectedQuestions.indexOf(targetModule.questionIdxs[i]) < originalPos) {
+          insertIdx = i + 1;
+        }
+      }
+      targetModule.questionIdxs.splice(insertIdx, 0, qIdx);
+    }
+  }
+  modules = modules.filter(mod => mod.id !== moduleId);
+  saveConfig();
+  render();
+}
+
+// ==================== UI HANDLERS ====================
+async function handleFile(file) {
+  if (!file) return;
+  try {
+    headers = [];
+    rows = [];
+    selectedQuestions = [];
+    groupingColIdx = null;
+    groups = [];
+    config = { groups: [], ordered: {}, mean_cols: {}, multi_idx: [] };
+    editingGroupIndex = -1;
+    editingConditions = [];
+    localStorage.removeItem('survey_analysis_config');
+
+    const result = await parseExcel(file);
+    headers = result.headers;
+    rows = result.rows;
+    selectedQuestions = headers.map((_, i) => i);
+
+    uploadedFileName = file.name.replace(/\.[^/.]+$/, '');
+
+    initModules();
+
+    const uploadHint = document.getElementById('uploadHint');
+    if (uploadHint) {
+      uploadHint.innerHTML = `<strong>${file.name}</strong> (${rows.length} 行 × ${headers.length} 列)`;
+    }
+
+    render();
+    loadSavedConfig();
+  } catch (err) {
+    alert('读取文件失败: ' + err.message);
+  }
+}
+
+function updateGroupColDropdown() {
+  const dropdown = document.getElementById('groupColDropdown');
+  const input = document.getElementById('groupColInput');
+  if (!dropdown || !input) return;
+
+  const searchText = input.value.toLowerCase();
+  const colOptions = headers.map((h, i) => ({ idx: i, name: cleanHeader(h) || `列${i + 1}` })).filter(h => h.name);
+  const filtered = colOptions.filter(opt => opt.name.toLowerCase().includes(searchText));
+
+  dropdown.innerHTML = filtered.map(opt => `
+    <div class="search-select-option ${groupingColIdx === opt.idx ? 'selected' : ''}"
+         data-idx="${opt.idx}" data-name="${opt.name}">
+      ${opt.name}
+    </div>
+  `).join('');
+
+  dropdown.classList.add('show');
+}
+
+function selectGroupCol(idx, name) {
+  groupingColIdx = idx;
+  document.getElementById('groupColInput').value = name;
+  document.getElementById('groupColDropdown').classList.remove('show');
+  render();
+  saveConfig();
+}
+
+function initGroupColSearch() {
+  const container = document.getElementById('groupColSearchSelect');
+  if (!container) return;
+
+  container.addEventListener('click', (e) => {
+    const option = e.target.closest('.search-select-option');
+    if (option) {
+      selectGroupCol(parseInt(option.dataset.idx), option.dataset.name);
+      return;
+    }
+  });
+
+  container.addEventListener('focusin', (e) => {
+    if (e.target.id === 'groupColInput') {
+      updateGroupColDropdown();
+    }
+  });
+
+  container.addEventListener('input', (e) => {
+    if (e.target.id === 'groupColInput') {
+      groupingColIdx = null;
+      updateGroupColDropdown();
+      hide(document.getElementById('groupValuesContainer'));
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#groupColSearchSelect')) {
+      const dropdown = document.getElementById('groupColDropdown');
+      if (dropdown) dropdown.classList.remove('show');
+    }
+  });
+}
+
+function toggleGroupValue(val) {
+  const exists = groups.find(g =>
+    g.conditions.length === 1 &&
+    g.conditions[0].colIdx === groupingColIdx &&
+    g.conditions[0].values.length === 1 &&
+    g.conditions[0].values[0] === val
+  );
+  if (exists) {
+    groups = groups.filter(g => g !== exists);
+  } else {
+    groups.push({ name: val, conditions: [{ colIdx: groupingColIdx, values: [val] }] });
+  }
+  render();
+  saveConfig();
+}
+
+function openGroupEditor(groupIndex) {
+  editingGroupIndex = groupIndex;
+  if (groupIndex >= 0) {
+    editingConditions = JSON.parse(JSON.stringify(groups[groupIndex].conditions));
+  } else {
+    editingConditions = [{ colIdx: null, values: [] }];
+  }
+  render();
+}
+
+function cancelGroupEditor() {
+  editingGroupIndex = -1;
+  editingConditions = [];
+  render();
+}
+
+function addCondition() {
+  editingConditions.push({ colIdx: null, values: [] });
+  render();
+}
+
+function removeCondition(condIndex) {
+  editingConditions.splice(condIndex, 1);
+  if (editingConditions.length === 0) {
+    editingConditions.push({ colIdx: null, values: [] });
+  }
+  render();
+}
+
+function handleConditionColChange(condIndex, colIdx) {
+  editingConditions[condIndex].colIdx = colIdx === '' ? null : parseInt(colIdx);
+  editingConditions[condIndex].values = [];
+  render();
+}
+
+function toggleConditionValue(condIndex, val) {
+  const cond = editingConditions[condIndex];
+  const idx = cond.values.indexOf(val);
+  if (idx >= 0) {
+    cond.values.splice(idx, 1);
+  } else {
+    cond.values.push(val);
+  }
+  render();
+}
+
+function saveGroup() {
+  const validConditions = editingConditions.filter(c => c.colIdx !== null && c.values.length > 0);
+  if (validConditions.length === 0) {
+    alert('请至少添加一个有效条件');
+    return;
+  }
+
+  let name = validConditions.map(cond => {
+    const colName = cleanHeader(headers[cond.colIdx]) || `列${cond.colIdx + 1}`;
+    return cond.values.join('+');
+  }).join(' & ');
+
+  const existingNames = groups.map(g => g.name);
+  if (existingNames.includes(name)) {
+    let i = 2;
+    while (existingNames.includes(`${name} (${i})`)) i++;
+    name = `${name} (${i})`;
+  }
+
+  const newGroup = { name, conditions: validConditions };
+  if (editingGroupIndex >= 0) {
+    groups[editingGroupIndex] = newGroup;
+  } else {
+    groups.push(newGroup);
+  }
+
+  editingGroupIndex = -1;
+  editingConditions = [];
+  render();
+  saveConfig();
+}
+
+function deleteGroup(groupIndex) {
+  groups.splice(groupIndex, 1);
+  render();
+  saveConfig();
+}
+
+function startDragSelect(event, idx) {
+  if (event.button !== 0) return;
+  isDraggingSelect = true;
+  const isSelected = selectedQuestions.includes(idx);
+  dragSelectValue = !isSelected;
+}
+
+function handleDragSelect(idx) {
+  if (!isDraggingSelect) return;
+  setQuestionSelected(idx, dragSelectValue);
+}
+
+function setQuestionSelected(idx, selected) {
+  const wasSelected = selectedQuestions.includes(idx);
+  if (selected && !wasSelected) {
+    selectedQuestions.push(idx);
+    updateCheckbox(idx, true);
+  } else if (!selected && wasSelected) {
+    selectedQuestions = selectedQuestions.filter(i => i !== idx);
+    updateCheckbox(idx, false);
+  }
+}
+
+function updateCheckbox(idx, checked) {
+  const checkbox = document.querySelector(`.question-item[data-question-idx="${idx}"] input[type="checkbox"]`);
+  if (checkbox) checkbox.checked = checked;
+  document.getElementById('downloadBtn').disabled = selectedQuestions.length === 0;
+}
+
+function endDragSelect() {
+  if (isDraggingSelect) {
+    isDraggingSelect = false;
+    saveConfig();
+  }
+}
+
+function selectAllQuestions() {
+  selectedQuestions = headers.map((_, i) => i);
+  render();
+  saveConfig();
+}
+
+function selectNoneQuestions() {
+  selectedQuestions = [];
+  render();
+  saveConfig();
+}
+
+function toggleQuestion(idx) {
+  if (selectedQuestions.includes(idx)) {
+    selectedQuestions = selectedQuestions.filter(i => i !== idx);
+  } else {
+    selectedQuestions.push(idx);
+  }
+  render();
+  saveConfig();
+}
+
+// Drag and drop for groups
+let dragIdx = null;
+
+function handleGroupDragStart(e, idx) {
+  dragIdx = idx;
+  e.dataTransfer.effectAllowed = 'move';
+  e.currentTarget.classList.add('dragging-item');
+}
+
+function handleGroupDragOver(e, idx) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  document.querySelectorAll('.drag-over-target').forEach(el => el.classList.remove('drag-over-target'));
+  e.currentTarget.classList.add('drag-over-target');
+  if (dragIdx === null || dragIdx === idx) return;
+  const [removed] = groups.splice(dragIdx, 1);
+  groups.splice(idx, 0, removed);
+  dragIdx = idx;
+  renderSelectedGroups();
+}
+
+function handleGroupDragEnd(e) {
+  e.currentTarget.classList.remove('dragging-item');
+  document.querySelectorAll('.drag-over-target').forEach(el => el.classList.remove('drag-over-target'));
+  dragIdx = null;
+  saveConfig();
+}
+
+// ==================== RENDER ====================
+function hide(el) { if (el) el.style.display = 'none'; }
+function show(el) { if (el) el.style.display = 'block'; }
+
+function render() {
+  const uploadZone = document.getElementById('uploadZone');
+  uploadZone.classList.remove('dragging');
+
+  const groupCard = document.getElementById('groupSelectorCard');
+  const groupColSelect = document.getElementById('groupColSelect');
+  const groupValuesContainer = document.getElementById('groupValuesContainer');
+  const complexGroupSection = document.getElementById('complexGroupSection');
+  const selectedGroupsContainer = document.getElementById('selectedGroupsContainer');
+  const qCard = document.getElementById('questionSelectorCard');
+  if (headers.length === 0) {
+    hide(groupCard);
+    hide(qCard);
+    return;
+  }
+
+  show(groupCard);
+  complexGroupSection.style.display = 'flex';
+
+  const groupColInput = document.getElementById('groupColInput');
+  const colOptions = headers.map((h, i) => ({ idx: i, name: cleanHeader(h) || `列${i + 1}` })).filter(h => h.name);
+
+  if (groupingColIdx !== null) {
+    const selectedCol = colOptions.find(opt => opt.idx === groupingColIdx);
+    groupColInput.value = selectedCol ? selectedCol.name : '';
+  } else {
+    groupColInput.value = '';
+  }
+
+  if (groupingColIdx === null) {
+    hide(groupValuesContainer);
+  } else {
+    show(groupValuesContainer);
+
+    const values = new Set();
+    const valueCounts = {};
+    for (const row of rows) {
+      const v = safe(row[groupingColIdx]);
+      if (v !== null) {
+        values.add(v);
+        valueCounts[v] = (valueCounts[v] || 0) + 1;
+      }
+    }
+    const sortedValues = [...values].sort();
+    const selectedValues = groups.filter(g => g.conditions.length === 1 && g.conditions[0].colIdx === groupingColIdx && g.conditions[0].values.length === 1).map(g => g.conditions[0].values[0]);
+
+    document.getElementById('groupValues').innerHTML = sortedValues.map(val => `
+      <button class="group-tag ${selectedValues.includes(val) ? 'selected' : 'unselected'}"
+              onclick="toggleGroupValue('${val.replace(/'/g, "\\'")}')">${val} <span style="opacity:0.6;font-size:11px">(${valueCounts[val]})</span></button>
+    `).join('');
+  }
+
+  const groupEditorForm = document.getElementById('groupEditorForm');
+  const addGroupBtn = document.getElementById('addGroupBtn');
+  const groupConditions = document.getElementById('groupConditions');
+
+  if (editingGroupIndex >= 0 || editingConditions.length > 0) {
+    show(groupEditorForm);
+    hide(addGroupBtn);
+
+    groupConditions.innerHTML = editingConditions.map((cond, condIdx) => {
+      const selectedCol = cond.colIdx !== null ? cond.colIdx : '';
+      let valueButtons = '';
+
+      if (selectedCol !== '') {
+        const values = new Set();
+        const valueCounts = {};
+        for (const row of rows) {
+          const v = safe(row[parseInt(selectedCol)]);
+          if (v !== null) {
+            values.add(v);
+            valueCounts[v] = (valueCounts[v] || 0) + 1;
+          }
+        }
+        const sortedValues = [...values].sort();
+        valueButtons = sortedValues.map(val => `
+          <button class="group-tag ${cond.values.includes(val) ? 'selected' : 'unselected'}"
+                  onclick="toggleConditionValue(${condIdx}, '${val.replace(/'/g, "\\'")}')">${val} <span style="opacity:0.6;font-size:11px">(${valueCounts[val]})</span></button>
+        `).join('');
+      }
+
+      return `
+        <div class="condition-item">
+          <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+            <span style="font-size:12px; color:var(--muted);">条件 ${condIdx + 1}</span>
+            <select onchange="handleConditionColChange(${condIdx}, this.value)" style="flex:1;">
+              <option value="">-- 选择列 --</option>
+              ${colOptions.map(opt => `<option value="${opt.idx}" ${parseInt(selectedCol) === opt.idx ? 'selected' : ''}>${opt.name}</option>`).join('')}
+            </select>
+            ${editingConditions.length > 1 ? `<button onclick="removeCondition(${condIdx})" style="background:none; border:none; color:var(--muted); cursor:pointer;">×</button>` : ''}
+          </div>
+          ${selectedCol !== '' ? `<div class="group-values">${valueButtons}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+  } else {
+    hide(groupEditorForm);
+    show(addGroupBtn);
+  }
+
+  if (groups.length > 0) {
+    show(selectedGroupsContainer);
+    renderSelectedGroups();
+  } else {
+    hide(selectedGroupsContainer);
+  }
+
+  if (headers.length === 0) {
+    hide(qCard);
+    return;
+  }
+  show(qCard);
+
+  const questionItems = [];
+  for (const mod of modules) {
+    questionItems.push({ type: 'module-start', moduleId: mod.id, moduleName: mod.name });
+    for (const qIdx of mod.questionIdxs) {
+      const title = cleanHeader(headers[qIdx]) || `列${qIdx + 1}`;
+      const isMulti = rows.length > 0 && isMultiChoice(rows, qIdx);
+      questionItems.push({ type: 'question', idx: qIdx, title, isMulti, moduleId: mod.id });
+    }
+    questionItems.push({ type: 'module-end' });
+  }
+
+  let html = '';
+  for (let i = 0; i < questionItems.length; i++) {
+    const item = questionItems[i];
+    if (item.type === 'module-start') {
+      html += `<div class="question-module" data-module-id="${item.moduleId}">
+        <div class="module-header">
+          <input type="text" class="module-name-input" value="${item.moduleName}" onchange="renameModule(${item.moduleId}, this.value)">
+          <button class="module-delete-btn" onclick="deleteModule(${item.moduleId})" title="Delete module">×</button>
+        </div>
+        <div class="module-questions">`;
+    } else if (item.type === 'module-end') {
+      html += `</div></div>`;
+    } else if (item.type === 'question') {
+      html += `
+        <label class="question-item" data-module-id="${item.moduleId}" data-question-idx="${item.idx}"
+               onmousedown="startDragSelect(event, ${item.idx})" onmouseenter="handleDragSelect(${item.idx})">
+          <input type="checkbox" ${selectedQuestions.includes(item.idx) ? 'checked' : ''} onchange="toggleQuestion(${item.idx})">
+          <span>${item.title}</span>
+          <button class="add-module-btn" onclick="addModuleAfterQuestion(${item.idx})" title="Add module after this">+</button>
+        </label>`;
+    }
+  }
+
+  document.getElementById('questionList').innerHTML = '<div class="question-list">' + html + '</div>';
+
+  document.getElementById('downloadBtn').disabled = selectedQuestions.length === 0;
+}
+
+function renderSelectedGroups() {
+  const container = document.getElementById('selectedGroups');
+  if (!container) return;
+
+  const grpData = groupRowsCustom(rows, groups);
+
+  container.innerHTML = groups.map((g, i) => {
+    const count = grpData[g.name] ? grpData[g.name].length : 0;
+    return `
+      <div class="group-tag selected" draggable="true"
+           ondragstart="handleGroupDragStart(event, ${i})"
+           ondragover="handleGroupDragOver(event, ${i})"
+           ondragend="handleGroupDragEnd(event)">
+        <span class="drag-handle">☰</span>
+        <span>${g.name}</span>
+        <span style="opacity:0.6; font-size:11px; margin-left:4px;">(${count})</span>
+        <span class="group-action-btn" onclick="openGroupEditor(${i})" title="编辑">✎</span>
+        <span class="group-action-btn" onclick="deleteGroup(${i})" title="删除">×</span>
+      </div>
+    `;
+  }).join('');
+}
+
+// ==================== CONFIG ====================
+function saveConfig() {
+  const data = { groups, selectedQuestions, groupingColIdx, config, modules };
+  localStorage.setItem('survey_analysis_config', JSON.stringify(data));
+}
+
+function loadSavedConfig() {
+  try {
+    const saved = localStorage.getItem('survey_analysis_config');
+    if (saved) {
+      const data = JSON.parse(saved);
+
+      if (data.groups && Array.isArray(data.groups)) {
+        groups = data.groups.map(g => {
+          if (g.conditions && g.conditions.length > 0) {
+            if (Array.isArray(g.conditions[0])) {
+              return {
+                name: g.name,
+                conditions: [{ colIdx: g.conditions[0][0], values: [g.conditions[0][1]] }]
+              };
+            }
+          }
+          return g;
+        });
+      } else {
+        groups = [];
+      }
+
+      if (data.selectedQuestions) selectedQuestions = data.selectedQuestions;
+      if (data.config) config = data.config;
+      if (data.modules && Array.isArray(data.modules) && data.modules.length > 0) {
+        modules = data.modules;
+        nextModuleId = Math.max(...modules.map(m => m.id)) + 1;
+      } else {
+        initModules();
+      }
+      render();
+    }
+  } catch (e) {
+    console.error('Failed to load config:', e);
+  }
+}
+
+function resetConfig() {
+  groups = [];
+  selectedQuestions = headers.map((_, i) => i);
+  groupingColIdx = null;
+  config = { groups: [], ordered: {}, mean_cols: {}, multi_idx: [] };
+  editingGroupIndex = -1;
+  editingConditions = [];
+  initModules();
+  localStorage.removeItem('survey_analysis_config');
+  render();
+}
+
+function exportConfig() {
+  const data = { groups, selectedQuestions, groupingColIdx, config, modules };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'config.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function importConfig(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    try {
+      const data = JSON.parse(evt.target.result);
+      if (data.groups) groups = data.groups;
+      if (data.selectedQuestions) selectedQuestions = data.selectedQuestions;
+      if (data.groupingColIdx !== undefined) groupingColIdx = data.groupingColIdx;
+      if (data.config) config = data.config;
+      if (data.modules && Array.isArray(data.modules) && data.modules.length > 0) {
+        modules = data.modules;
+        nextModuleId = Math.max(...modules.map(m => m.id)) + 1;
+      }
+      saveConfig();
+      render();
+      alert('配置已加载');
+    } catch (err) {
+      alert('加载失败: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+}
+
+// ==================== INIT ====================
+document.addEventListener('DOMContentLoaded', function() {
+  const uploadZone = document.getElementById('uploadZone');
+  const fileInput = document.getElementById('fileInput');
+  const configInput = document.getElementById('configInput');
+
+  uploadZone.addEventListener('click', () => fileInput.click());
+
+  uploadZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    uploadZone.classList.add('dragging');
+  });
+
+  uploadZone.addEventListener('dragleave', () => {
+    uploadZone.classList.remove('dragging');
+  });
+
+  uploadZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadZone.classList.remove('dragging');
+    const file = e.dataTransfer.files?.[0];
+    if (file) handleFile(file);
+  });
+
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files?.[0];
+    if (file) handleFile(file);
+  });
+
+  configInput.addEventListener('change', importConfig);
+
+  document.getElementById('exportConfigBtn').addEventListener('click', exportConfig);
+  document.getElementById('resetConfigBtn').addEventListener('click', resetConfig);
+  document.getElementById('selectAllBtn').addEventListener('click', selectAllQuestions);
+  document.getElementById('selectNoneBtn').addEventListener('click', selectNoneQuestions);
+  document.getElementById('downloadBtn').addEventListener('click', downloadExcel);
+  document.getElementById('addGroupBtn').addEventListener('click', () => openGroupEditor(-1));
+  document.getElementById('addConditionBtn').addEventListener('click', addCondition);
+  document.getElementById('saveGroupBtn').addEventListener('click', saveGroup);
+  document.getElementById('cancelGroupBtn').addEventListener('click', cancelGroupEditor);
+
+  document.addEventListener('mouseup', endDragSelect);
+
+  render();
+  initGroupColSearch();
+  loadSavedConfig();
+});
+</script>
+</body>
+</html>

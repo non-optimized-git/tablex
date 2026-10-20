@@ -180,11 +180,48 @@ function r3(x) {
   return x < 0.0005 ? 0 : Math.round(x * 1000) / 1000;
 }
 
+// 从选项值中提取数值分数，如 "5.0-非常满意" → 5.0，"4.5" → 4.5
+function extractScoreValue(val) {
+  if (val === null || val === undefined) return null;
+  const m = String(val).match(/^([\d.]+)/);
+  if (!m) return null;
+  const n = parseFloat(m[1]);
+  return isNaN(n) ? null : n;
+}
+
+// 判断是否为量表题：所有选项都能提取出数值分数
+function isScoreQuestion(allRows, colIdx) {
+  const counts = countOptions(allRows, colIdx, false);
+  const opts = Object.keys(counts);
+  if (opts.length === 0) return false;
+  return opts.every(opt => extractScoreValue(opt) !== null);
+}
+
+// 计算加权平均分：Σ(分数 × 人数) / 总人数
+function calcWeightedMean(allRows, colIdx) {
+  let totalWeight = 0;
+  let totalCount = 0;
+  for (const row of allRows) {
+    const val = safe(row[colIdx]);
+    if (val === null) continue;
+    const parts = String(val).includes(',') ? splitOpts(val) : [val];
+    for (const p of parts) {
+      const score = extractScoreValue(p);
+      if (score !== null) {
+        totalWeight += score;
+        totalCount++;
+      }
+    }
+  }
+  return totalCount > 0 ? totalWeight / totalCount : null;
+}
+
 // ==================== EXCEL WRITER (ExcelJS) ====================
 const RED_FILL = 'FFE8CCCC';
 const GREEN_FILL = 'FFD4E8D4';
-const GRAY_FILL = 'FFE8E0D4';
+const GRAY_FILL = 'FFDEE0E3';
 const BASE_FILL = 'FFA89888';
+const AVG_FILL = 'FFFFF3E0'; // 暖琥珀色，用于平均分行
 
 const BORDER = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
 const FONT_DATA = { name: '微软雅黑', size: 10 };
@@ -340,6 +377,16 @@ function generateExcelWorkbook() {
           const c2 = bRow.getCell(t.tot); c2.value = totalUsers; c2.style = makeDataStyle('center'); c2.font = { name: '微软雅黑', size: 10, italic: true, color: { argb: BASE_FILL } };
         }
 
+        // 平均分行（仅量表题）
+        if (isScoreQuestion(rows, colIdx)) {
+          const avgMean = calcWeightedMean(rows, colIdx);
+          const avgRow = ws.addRow();
+          for (const t of [t1, t2, t3]) {
+            const c1 = avgRow.getCell(t.opt); c1.value = '平均分'; c1.style = makeFillStyle(AVG_FILL, 'left'); c1.font = { name: '微软雅黑', size: 10, bold: true };
+            const c2 = avgRow.getCell(t.tot); c2.value = avgMean !== null ? Math.round(avgMean * 100) / 100 : ''; c2.style = makeFillStyle(AVG_FILL, 'center'); c2.font = { name: '微软雅黑', size: 10, bold: true }; c2.numFmt = '0.00';
+          }
+        }
+
         // Data rows
         const pctByOpt = allOpts.map(opt => {
           const val = counts[opt] || 0;
@@ -425,6 +472,35 @@ function generateExcelWorkbook() {
           applyBaseStyle(bRow.getCell(cellIdx++), totalAllUsers);
           for (let i = 0; i < numGroups; i++) { applyBaseStyle(bRow.getCell(cellIdx++), groupUsers[orderedGroups[i]] || 0); }
           if (t < 1) cellIdx++; // spacer between tables
+        }
+
+        // 平均分行（仅量表题）
+        if (isScoreQuestion(rows, colIdx)) {
+          const avgRow = ws.addRow();
+          cellIdx = 1;
+          const avgStyle = (cell, value) => { cell.value = value; cell.style = makeFillStyle(AVG_FILL, 'center'); cell.font = { name: '微软雅黑', size: 10, bold: true }; cell.numFmt = '0.00'; };
+          const avgStyleLeft = (cell, value) => { cell.value = value; cell.style = makeFillStyle(AVG_FILL, 'left'); cell.font = { name: '微软雅黑', size: 10, bold: true }; };
+          const totalAvg = calcWeightedMean(rows, colIdx);
+          const totalAvgR = totalAvg !== null ? Math.round(totalAvg * 100) / 100 : '';
+
+          // Table 1
+          avgStyleLeft(avgRow.getCell(cellIdx++), '平均分');
+          avgStyle(avgRow.getCell(cellIdx++), totalAvgR);
+          for (let i = 0; i < numGroups; i++) {
+            const gAvg = calcWeightedMean(grpData[orderedGroups[i]], colIdx);
+            avgStyle(avgRow.getCell(cellIdx++), gAvg !== null ? Math.round(gAvg * 100) / 100 : '');
+          }
+          cellIdx++; // spacer
+          // Table 2 & 3
+          for (let t = 0; t < 2; t++) {
+            avgStyleLeft(avgRow.getCell(cellIdx++), '平均分');
+            avgStyle(avgRow.getCell(cellIdx++), totalAvgR);
+            for (let i = 0; i < numGroups; i++) {
+              const gAvg = calcWeightedMean(grpData[orderedGroups[i]], colIdx);
+              avgStyle(avgRow.getCell(cellIdx++), gAvg !== null ? Math.round(gAvg * 100) / 100 : '');
+            }
+            if (t < 1) cellIdx++; // spacer between tables
+          }
         }
 
         // Data rows
