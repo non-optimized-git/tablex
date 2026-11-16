@@ -259,15 +259,16 @@ function calcWeightedMean(allRows, colIdx) {
 }
 
 // ==================== EXCEL WRITER (ExcelJS) ====================
-const RED_FILL = 'FFD96459';
-const GREEN_FILL = 'FF6AA84F';
-const GRAY_FILL = 'FFDEE0E3';
-const BASE_FILL = 'FFA89888';
-const AVG_FILL = 'FFFFF3E0'; // 暖琥珀色，用于平均分行
+const RED_FILL = 'FFF8696B';    // 色阶最低（红）
+const YELLOW_FILL = 'FFFFEB84'; // 色阶中点（黄）
+const GREEN_FILL = 'FF63BE7B';  // 色阶最高（绿）
+const GRAY_FILL = 'FFD9D9D9';   // 表头行底色（中性灰）
+const BASE_FILL = 'FFA6A6A6';   // base 行斜体文字（中性浅灰）
+const AVG_FILL = 'FFFBE5D6';    // 平均分行底色（暖米色，同截图）
 
 const BORDER = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
 const FONT_DATA = { name: '微软雅黑', size: 10 };
-const FONT_HEADER = { name: '微软雅黑', size: 10 };
+const FONT_HEADER = { name: '微软雅黑', size: 10, bold: true }; // 表头加粗（同截图）
 
 function makeBorder() { return BORDER; }
 
@@ -287,14 +288,16 @@ function makeFillStyle(color, align, numFmt) {
   return s;
 }
 
-// Table 3 红→绿色阶：t=0 → RED_FILL（最低），t=1 → GREEN_FILL（最高），
-// 中间按数据高低在两端点色之间线性插值。端点色为全局常量，全表统一。
+// Table 3 红→黄→绿三色色阶（同截图/Excel 三色渐变）：t=0 → RED_FILL（最低），
+// t=0.5 → YELLOW_FILL（中点），t=1 → GREEN_FILL（最高），两段线性插值。端点/中点为全局常量，全表统一。
 function mixFill(t) {
   const parse = argb => [parseInt(argb.slice(2, 4), 16), parseInt(argb.slice(4, 6), 16), parseInt(argb.slice(6, 8), 16)];
   const c1 = parse(RED_FILL);
-  const c2 = parse(GREEN_FILL);
+  const c2 = parse(YELLOW_FILL);
+  const c3 = parse(GREEN_FILL);
   const hex = n => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0').toUpperCase();
-  return 'FF' + [0, 1, 2].map(i => hex(c1[i] + (c2[i] - c1[i]) * t)).join('');
+  const [a, b, u] = t <= 0.5 ? [c1, c2, t * 2] : [c2, c3, (t - 0.5) * 2];
+  return 'FF' + [0, 1, 2].map(i => hex(a[i] + (b[i] - a[i]) * u)).join('');
 }
 
 function generateExcelWorkbook() {
@@ -546,20 +549,44 @@ function generateExcelWorkbook() {
           }
         }
 
-        // Data rows
+        // 预计算各选项的分组百分比；色阶把整个数据区（所有行 × 分组列）当一个整体归一化，
+        // Total 列不上色、不参与极值（同截图：红→黄→绿三色渐变，中点=数据中位数）
+        const pctByOpt = {};
+        const areaVals = [];
         for (const opt of allOpts) {
           const pcts = {};
           for (const g of orderedGroups) {
             const val = groupCounts[g][opt] || 0;
             const total = groupUsers[g] || 0;
             pcts[g] = total > 0 ? r3(val / total) : 0;
+            areaVals.push(pcts[g]);
           }
+          pctByOpt[opt] = pcts;
+        }
+        areaVals.sort((a, b) => a - b);
+        const minPct = areaVals[0];
+        const maxPct = areaVals[areaVals.length - 1];
+        const midPct = areaVals.length % 2
+          ? areaVals[(areaVals.length - 1) / 2]
+          : (areaVals[areaVals.length / 2 - 1] + areaVals[areaVals.length / 2]) / 2;
+        // 值 → t∈[0,1]：min→0（红）、中位数→0.5（黄）、max→1（绿）
+        const gradT = v => {
+          if (v <= minPct) return 0;
+          if (v >= maxPct) return 1;
+          if (midPct <= minPct || midPct >= maxPct) return (v - minPct) / (maxPct - minPct);
+          return v <= midPct
+            ? 0.5 * (v - minPct) / (midPct - minPct)
+            : 0.5 + 0.5 * (v - midPct) / (maxPct - midPct);
+        };
+        const gradStyle = pctVal => maxPct !== minPct
+          ? makeFillStyle(mixFill(gradT(pctVal)), 'center', '0.0%')
+          : makeDataStyle('center', '0.0%');
+
+        // Data rows
+        for (const opt of allOpts) {
+          const pcts = pctByOpt[opt];
           const totalVal = totalCounts[opt] || 0;
           const totalPct = totalAllUsers > 0 ? r3(totalVal / totalAllUsers) : 0;
-
-          // 色阶只在分组列之间归一化（Total 列不上色，也不参与极值）
-          const maxPct = Math.max(...Object.values(pcts));
-          const minPct = Math.min(...Object.values(pcts));
 
           const dRow = ws.addRow();
           cellIdx = 1;
@@ -575,10 +602,7 @@ function generateExcelWorkbook() {
           for (let i = 0; i < numGroups; i++) { dRow.getCell(cellIdx++).value = pcts[orderedGroups[i]]; dRow.getCell(cellIdx - 1).style = makeDataStyle('center', '0.0%'); }
           // Spacer
           cellIdx++;
-          // Table 3: opt, totalPct, groups (pct with red→green gradient per row; Total 列不上色)
-          const gradStyle = pctVal => maxPct !== minPct
-            ? makeFillStyle(mixFill((pctVal - minPct) / (maxPct - minPct)), 'center', '0.0%')
-            : makeDataStyle('center', '0.0%');
+          // Table 3: opt, totalPct, groups (数据区整体红→黄→绿色阶；Total 列不上色)
           dRow.getCell(cellIdx++).value = opt; dRow.getCell(cellIdx - 1).style = makeDataStyle('left');
           const t3TotCell = dRow.getCell(cellIdx++); t3TotCell.value = totalPct; t3TotCell.style = makeDataStyle('center', '0.0%');
           for (let i = 0; i < numGroups; i++) {
@@ -1086,7 +1110,7 @@ function render() {
   }
 
   show(groupCard);
-  complexGroupSection.style.display = 'flex';
+  complexGroupSection.style.display = 'block'; // 左对齐、通栏（不再右贴）
 
   // 基础表头选择 - 搜索选择框
   const groupColInput = document.getElementById('groupColInput');
