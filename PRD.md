@@ -1,7 +1,7 @@
 # TableX 表析 - 产品需求文档
 
 **版本**：v1.0
-**更新日期**：2026-08-17
+**更新日期**：2026-11-16
 
 ---
 
@@ -76,6 +76,7 @@ TableX 是一个问卷数据分析工具，面向市场研究和用户调研人�
 | Table 3 | 百分比 | 红→黄→绿三色渐变：最低=红，中位数=黄，最高=绿（整个数据区整体归一化；Total 列不上色、不参与极值；max = min 不上色；锚点色全表统一） |
 
 - 每个表格布局：`选项 | Total | 分组1 | 分组2 | ...`
+- 大标题自动简化（去除题型标签、提问短语、问句尾巴等，截断 16 字）；副标题保留完整题干 + 题目类型
 - 量表题（选项均为数值，如 "5.0-非常满意"）自动计算加权平均分，显示在 base 行下方
 - 平均分行样式：暖米色底 `#FBE5D6`，加粗，保留两位小数
 
@@ -171,5 +172,6 @@ TableX 是一个问卷数据分析工具，面向市场研究和用户调研人�
 ## 11. 交付说明
 
 - 本地启动：`python3 -m http.server 9000`，访问 `http://localhost:9000/index.html`
+- **独立运行**：`tablex-standalone.html` 单文件版，浏览器直接打开即可（SheetJS/ExcelJS 走 CDN，首次打开需联网）；与多文件版手动同步，`node tests/check-standalone.js` 校验
 - 部署：Vercel 静态托管，`vercel.json` 中 `outputDirectory = "."`
-- 无测试框架，无自动化测试
+- 测试：`tests/` 下 Node 沙箱脚本（`test-multi.js` / `test-clauses.js` / `test-excel.js` / `check-standalone.js`），无测试框架

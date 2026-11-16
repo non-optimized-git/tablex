@@ -21,7 +21,8 @@ python3 -m http.server 9000
 
 ```
 tablex/
-├── index.html              # 唯一入口页面
+├── index.html              # 主入口页面（多文件版）
+├── tablex-standalone.html  # 独立运行单文件版（index.html + styles.css + app.js 手动合并，改动需同步）
 ├── assets/
 │   ├── js/
 │   │   ├── app.js          # 全部核心逻辑
@@ -29,10 +30,18 @@ tablex/
 │   │   └── app.js.fix      # 备份（旧版，可清理）
 │   ├── css/styles.css      # 样式（黑白灰极简）
 │   └── lib/                # 第三方库（xlsx.full.min.js, exceljs.min.js）
+├── tests/                  # Node 沙箱测试（stub DOM/ExcelJS 跑真实函数）
+│   ├── test-multi.js       # 多选逗号分割匹配（15 断言）
+│   ├── test-clauses.js     # 复杂表头条件组合（13 断言）
+│   ├── test-excel.js       # Excel 导出色阶（34 断言）
+│   └── check-standalone.js # standalone 内联语法 + 关键常量一致性
 ├── vercel.json
-├── README.md
+├── PRD.md                  # 产品需求文档
+├── README.md               # 使用/独立运行文档
 └── CLAUDE.md               # 本文件
 ```
+
+**双文件同步**：`tablex-standalone.html` 是手动维护的单文件副本，改了 `app.js`/`index.html`/`styles.css` 必须同步过去，用 `node tests/check-standalone.js` 校验。
 
 ## 数据流
 
@@ -154,6 +163,8 @@ groups[] = [{
 |------|------|
 | `generateExcelWorkbook()` | 生成 ExcelJS Workbook |
 | `mixFill(t)` | 红→黄→绿两段线性插值填充色（t=0 红 `#F8696B`，t=0.5 黄 `#FFEB84`，t=1 绿 `#63BE7B`）|
+| `getShortTitle(header)` | 大标题简化：去 HTML/题型标签/提问短语/品牌词/问句尾巴/列编号前缀，截断 16 字（含项目定制规则：新乐道L60、让你比较犹豫/不满意）|
+| `cleanHeader(header)` | 副标题：仅去 HTML 标签与列编号前缀，保留完整题干 |
 | `downloadExcel()` | 触发下载（文件名：`上传文件名_MMddHHmm.xlsx`） |
 
 ### 配置持久化
@@ -223,8 +234,20 @@ Table 3 色阶把**整个数据区（所有行 × 分组列）当一个整体**�
 - 存储: `{groups, selectedQuestions, groupingColIdx, config, modules}`
 - 兼容新旧格式的 groups 结构
 
+## 测试
+
+无测试框架；`tests/` 下为 Node 沙箱脚本（stub 掉 document/localStorage/ExcelJS，跑 app.js 真实函数）：
+
+```bash
+node tests/test-multi.js        # 多选逗号分割匹配（15 断言）
+node tests/test-clauses.js      # 复杂表头条件组合（13 断言）
+node tests/test-excel.js        # Excel 导出色阶（34 断言）
+node tests/check-standalone.js  # standalone 内联语法 + 常量一致性
+```
+
+改 `app.js` 后四个都跑；改 `tablex-standalone.html` 后至少跑 `check-standalone.js`。
+
 ## 注意事项
 
-- 无测试框架，无测试文件
 - `assets/js/` 下有 `app.js.bak` 和 `app.js.fix` 两个备份文件，可安全删除
 - 第三方库直接 vendored，不通过 npm 管理
