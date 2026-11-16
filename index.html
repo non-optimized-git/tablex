@@ -61,9 +61,10 @@
       <button class="btn btn-secondary" id="addGroupBtn">+ 添加复杂表头</button>
       <div id="groupEditorForm" style="display:none">
         <div id="groupConditions"></div>
-        <div style="display:flex; gap:12px; margin-top:16px;">
-          <button class="btn btn-secondary" id="addConditionBtn">+ 添加条件</button>
+        <div style="display:flex; gap:12px; margin-top:16px; align-items:center;">
+          <button class="btn btn-secondary" id="addClauseBtn">+ 添加条件组</button>
           <button class="btn btn-primary" id="saveGroupBtn">保存表头</button>
+          <span id="groupMatchCount" style="font-size:13px; color:var(--muted); white-space:nowrap;"></span>
           <button class="btn btn-secondary" id="cancelGroupBtn">取消</button>
         </div>
       </div>

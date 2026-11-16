@@ -5,15 +5,15 @@
 }
 
 :root {
-  --bg: #FAF7F2;
-  --card: #FFFDF9;
-  --border: #E8E0D4;
-  --text: #3E2723;
-  --muted: #A89888;
-  --light: #F5F0E8;
-  --accent: #5C4033;
-  --accent-hover: #3E2723;
-  --highlight: #C4A87C;
+  --bg: #F7F7F7;
+  --card: #FFFFFF;
+  --border: #E2E2E2;
+  --text: #1A1A1A;
+  --muted: #9A9A9A;
+  --light: #F0F0F0;
+  --accent: #222222;
+  --accent-hover: #444444;
+  --highlight: #8A8A8A;
 }
 
 body {
@@ -28,7 +28,7 @@ body {
 
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #C4B8A8; border-radius: 2px; }
+::-webkit-scrollbar-thumb { background: #C8C8C8; border-radius: 2px; }
 
 input:focus, select:focus, button:focus {
   outline: none;
@@ -94,8 +94,8 @@ header {
 }
 
 .btn-primary:disabled {
-  background: #C4B8A8;
-  border-color: #C4B8A8;
+  background: #C8C8C8;
+  border-color: #C8C8C8;
   cursor: not-allowed;
 }
 
@@ -175,7 +175,7 @@ main {
 
 .upload-zone .hint {
   font-size: 12px;
-  color: #B8A898;
+  color: #ABABAB;
   margin-top: 8px;
 }
 
@@ -189,7 +189,7 @@ select {
   background: white;
   color: var(--text);
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23A89888' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239A9A9A' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 16px center;
 }
@@ -215,7 +215,7 @@ select option {
   font-size: 14px;
   background: white;
   color: var(--text);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23A89888' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239A9A9A' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 16px center;
 }

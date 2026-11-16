@@ -11,7 +11,8 @@ let nextModuleId = 1;
 let uploadedFileName = ''; // 上传的文件名（不含扩展名）
 // 表头编辑器状态
 let editingGroupIndex = -1; // -1 表示新建，>=0 表示编辑
-let editingConditions = []; // [{colIdx: number, values: string[]}]
+let editingRelation = 'and'; // 条件组之间的关系：'and' | 'or'
+let editingClauses = []; // [{relation: 'and'|'or', conditions: [{colIdx, values}]}]，空数组=编辑器关闭
 
 // 拖拽选择状态
 let isDraggingSelect = false;
@@ -120,25 +121,66 @@ function splitOpts(val) {
   return String(val).split(',').map(o => o.trim()).filter(o => o);
 }
 
+// ==================== 表头条件 ====================
+// 表头定义：{ name, relation: 'and'|'or', clauses: [{ relation, conditions: [{colIdx, values}] }] }
+// 语义：条件值内 OR（命中任一值即可），条件间按组内 relation，条件组间按顶层 relation，
+// 可表达 (A & B) | (C & D) 等分组括号组合。migrateGroup 兼容历史格式
+// conditions: [[colIdx, val]] / [{colIdx, values}]。
+function migrateGroup(g) {
+  if (Array.isArray(g.clauses)) {
+    return {
+      name: g.name,
+      relation: g.relation === 'or' ? 'or' : 'and',
+      clauses: g.clauses.map(cl => ({
+        relation: cl.relation === 'or' ? 'or' : 'and',
+        conditions: (Array.isArray(cl.conditions) ? cl.conditions : []).map(c => ({
+          colIdx: c.colIdx,
+          values: Array.isArray(c.values) ? c.values : [],
+          valuesRelation: c.valuesRelation === 'and' ? 'and' : 'or'
+        }))
+      }))
+    };
+  }
+  const conds = Array.isArray(g.conditions) ? g.conditions.map(c =>
+    Array.isArray(c)
+      ? { colIdx: c[0], values: [c[1]], valuesRelation: 'or' }
+      : { colIdx: c.colIdx, values: Array.isArray(c.values) ? c.values : [], valuesRelation: c.valuesRelation === 'and' ? 'and' : 'or' }
+  ) : [];
+  return { name: g.name, relation: 'and', clauses: [{ relation: 'and', conditions: conds }] };
+}
+
+// 基础表头的单一条件（单条件组、单条件），否则返回 null
+function getBasicCondition(g) {
+  const m = migrateGroup(g);
+  if (m.clauses.length !== 1 || m.clauses[0].conditions.length !== 1) return null;
+  return m.clauses[0].conditions[0];
+}
+
+function condMatches(row, cond) {
+  // 选项之间：任一（或，默认）/ 全部（且，多选题）；多选单元格按英文逗号分割后逐项匹配
+  // （与选项数据同口径），整值命中保留以兼容历史配置
+  const v = safe(row[cond.colIdx]);
+  if (v === null) return false;
+  const parts = splitOpts(v);
+  const hit = val => v === val || parts.includes(val);
+  return cond.valuesRelation === 'and' ? cond.values.every(hit) : cond.values.some(hit);
+}
+
+function clauseMatches(row, cl) {
+  return cl.relation === 'or'
+    ? cl.conditions.some(c => condMatches(row, c))
+    : cl.conditions.every(c => condMatches(row, c));
+}
+
 function groupRowsCustom(allRows, customGroups) {
   const result = {};
   for (const groupDef of customGroups) {
-    const groupName = groupDef.name;
-    const conditions = groupDef.conditions;
-    result[groupName] = [];
-    for (const row of allRows) {
-      let match = true;
-      // 列间 AND 关系
-      for (const cond of conditions) {
-        const val = safe(row[cond.colIdx]);
-        // 列内 OR 关系：满足任一值即可
-        if (!cond.values.includes(val)) {
-          match = false;
-          break;
-        }
-      }
-      if (match) result[groupName].push(row);
-    }
+    const g = migrateGroup(groupDef);
+    result[g.name] = allRows.filter(row =>
+      g.relation === 'or'
+        ? g.clauses.some(cl => clauseMatches(row, cl))
+        : g.clauses.every(cl => clauseMatches(row, cl))
+    );
   }
   return result;
 }
@@ -217,8 +259,8 @@ function calcWeightedMean(allRows, colIdx) {
 }
 
 // ==================== EXCEL WRITER (ExcelJS) ====================
-const RED_FILL = 'FFE8CCCC';
-const GREEN_FILL = 'FFD4E8D4';
+const RED_FILL = 'FFD96459';
+const GREEN_FILL = 'FF6AA84F';
 const GRAY_FILL = 'FFDEE0E3';
 const BASE_FILL = 'FFA89888';
 const AVG_FILL = 'FFFFF3E0'; // 暖琥珀色，用于平均分行
@@ -243,6 +285,16 @@ function makeFillStyle(color, align, numFmt) {
   const s = { font: FONT_DATA, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: color } }, alignment: { horizontal: align }, border: BORDER };
   if (numFmt) s.numFmt = numFmt;
   return s;
+}
+
+// Table 3 红→绿色阶：t=0 → RED_FILL（最低），t=1 → GREEN_FILL（最高），
+// 中间按数据高低在两端点色之间线性插值。端点色为全局常量，全表统一。
+function mixFill(t) {
+  const parse = argb => [parseInt(argb.slice(2, 4), 16), parseInt(argb.slice(4, 6), 16), parseInt(argb.slice(6, 8), 16)];
+  const c1 = parse(RED_FILL);
+  const c2 = parse(GREEN_FILL);
+  const hex = n => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0').toUpperCase();
+  return 'FF' + [0, 1, 2].map(i => hex(c1[i] + (c2[i] - c1[i]) * t)).join('');
 }
 
 function generateExcelWorkbook() {
@@ -392,8 +444,6 @@ function generateExcelWorkbook() {
           const val = counts[opt] || 0;
           return totalUsers > 0 ? r3(val / totalUsers) : 0;
         });
-        const maxPct = Math.max(...pctByOpt);
-        const minPct = Math.min(...pctByOpt);
 
         for (let oi = 0; oi < allOpts.length; oi++) {
           const opt = allOpts[oi];
@@ -409,16 +459,9 @@ function generateExcelWorkbook() {
           dRow.getCell(t2.opt).value = opt; dRow.getCell(t2.opt).style = makeDataStyle('left');
           dRow.getCell(t2.tot).value = pct; dRow.getCell(t2.tot).style = makeDataStyle('center', '0.0%');
 
-          // Table 3: pct with highlight (red=highest, green=lowest, only if distinct)
+          // Table 3: pct（Total 列不上色）
           dRow.getCell(t3.opt).value = opt; dRow.getCell(t3.opt).style = makeDataStyle('left');
-          if (maxPct !== minPct) {
-            if (pct === maxPct) dRow.getCell(t3.tot).style = makeFillStyle(GREEN_FILL, 'center', '0.0%');
-            else if (pct === minPct) dRow.getCell(t3.tot).style = makeFillStyle(RED_FILL, 'center', '0.0%');
-            else dRow.getCell(t3.tot).style = makeDataStyle('center', '0.0%');
-          } else {
-            dRow.getCell(t3.tot).style = makeDataStyle('center', '0.0%');
-          }
-          dRow.getCell(t3.tot).value = pct;
+          dRow.getCell(t3.tot).value = pct; dRow.getCell(t3.tot).style = makeDataStyle('center', '0.0%');
         }
 
         // No mean row
@@ -514,8 +557,9 @@ function generateExcelWorkbook() {
           const totalVal = totalCounts[opt] || 0;
           const totalPct = totalAllUsers > 0 ? r3(totalVal / totalAllUsers) : 0;
 
-          const maxPct = Math.max(...Object.values(pcts), totalPct);
-          const minPct = Math.min(...Object.values(pcts), totalPct);
+          // 色阶只在分组列之间归一化（Total 列不上色，也不参与极值）
+          const maxPct = Math.max(...Object.values(pcts));
+          const minPct = Math.min(...Object.values(pcts));
 
           const dRow = ws.addRow();
           cellIdx = 1;
@@ -531,20 +575,15 @@ function generateExcelWorkbook() {
           for (let i = 0; i < numGroups; i++) { dRow.getCell(cellIdx++).value = pcts[orderedGroups[i]]; dRow.getCell(cellIdx - 1).style = makeDataStyle('center', '0.0%'); }
           // Spacer
           cellIdx++;
-          // Table 3: opt, totalPct, groups (pct with highlight)
+          // Table 3: opt, totalPct, groups (pct with red→green gradient per row; Total 列不上色)
+          const gradStyle = pctVal => maxPct !== minPct
+            ? makeFillStyle(mixFill((pctVal - minPct) / (maxPct - minPct)), 'center', '0.0%')
+            : makeDataStyle('center', '0.0%');
           dRow.getCell(cellIdx++).value = opt; dRow.getCell(cellIdx - 1).style = makeDataStyle('left');
-          dRow.getCell(cellIdx++).value = totalPct; dRow.getCell(cellIdx - 1).style = makeDataStyle('center', '0.0%');
+          const t3TotCell = dRow.getCell(cellIdx++); t3TotCell.value = totalPct; t3TotCell.style = makeDataStyle('center', '0.0%');
           for (let i = 0; i < numGroups; i++) {
-            const g = orderedGroups[i];
-            const cellPct = pcts[g];
-            if (maxPct !== minPct) {
-              if (cellPct === maxPct) dRow.getCell(cellIdx++).style = makeFillStyle(GREEN_FILL, 'center', '0.0%');
-              else if (cellPct === minPct) dRow.getCell(cellIdx++).style = makeFillStyle(RED_FILL, 'center', '0.0%');
-              else dRow.getCell(cellIdx++).style = makeDataStyle('center', '0.0%');
-            } else {
-              dRow.getCell(cellIdx++).style = makeDataStyle('center', '0.0%');
-            }
-            dRow.getCell(cellIdx - 1).value = cellPct;
+            const cellPct = pcts[orderedGroups[i]];
+            const gCell = dRow.getCell(cellIdx++); gCell.value = cellPct; gCell.style = gradStyle(cellPct);
           }
         }
 
@@ -679,7 +718,8 @@ async function handleFile(file) {
     groups = [];
     config = { groups: [], ordered: {}, mean_cols: {}, multi_idx: [] };
     editingGroupIndex = -1;
-    editingConditions = [];
+    editingRelation = 'and';
+    editingClauses = [];
     localStorage.removeItem('survey_analysis_config');
 
     const result = await parseExcel(file);
@@ -774,17 +814,15 @@ function initGroupColSearch() {
 }
 
 function toggleGroupValue(val) {
-  // 检查是否已存在基础表头（单条件、单值）
-  const exists = groups.find(g =>
-    g.conditions.length === 1 &&
-    g.conditions[0].colIdx === groupingColIdx &&
-    g.conditions[0].values.length === 1 &&
-    g.conditions[0].values[0] === val
-  );
+  // 检查是否已存在基础表头（单条件组、单条件、单值）
+  const exists = groups.find(g => {
+    const c = getBasicCondition(g);
+    return c && c.colIdx === groupingColIdx && c.values.length === 1 && c.values[0] === val;
+  });
   if (exists) {
     groups = groups.filter(g => g !== exists);
   } else {
-    groups.push({ name: val, conditions: [{ colIdx: groupingColIdx, values: [val] }] });
+    groups.push({ name: val, relation: 'and', clauses: [{ relation: 'and', conditions: [{ colIdx: groupingColIdx, values: [val] }] }] });
   }
   render();
   saveConfig();
@@ -793,40 +831,72 @@ function toggleGroupValue(val) {
 function openGroupEditor(groupIndex) {
   editingGroupIndex = groupIndex;
   if (groupIndex >= 0) {
-    editingConditions = JSON.parse(JSON.stringify(groups[groupIndex].conditions));
+    const g = migrateGroup(groups[groupIndex]);
+    editingRelation = g.relation;
+    editingClauses = JSON.parse(JSON.stringify(g.clauses));
+    if (editingClauses.length === 0) {
+      editingClauses = [{ relation: 'and', conditions: [{ colIdx: null, values: [] }] }];
+    }
   } else {
-    editingConditions = [{ colIdx: null, values: [] }];
+    editingRelation = 'and';
+    editingClauses = [{ relation: 'and', conditions: [{ colIdx: null, values: [] }] }];
   }
   render();
 }
 
 function cancelGroupEditor() {
   editingGroupIndex = -1;
-  editingConditions = [];
+  editingRelation = 'and';
+  editingClauses = [];
   render();
 }
 
-function addCondition() {
-  editingConditions.push({ colIdx: null, values: [] });
+function addClause() {
+  editingClauses.push({ relation: 'and', conditions: [{ colIdx: null, values: [] }] });
   render();
 }
 
-function removeCondition(condIndex) {
-  editingConditions.splice(condIndex, 1);
-  if (editingConditions.length === 0) {
-    editingConditions.push({ colIdx: null, values: [] });
+function removeClause(clauseIdx) {
+  editingClauses.splice(clauseIdx, 1);
+  if (editingClauses.length === 0) {
+    editingClauses.push({ relation: 'and', conditions: [{ colIdx: null, values: [] }] });
   }
   render();
 }
 
-function handleConditionColChange(condIndex, colIdx) {
-  editingConditions[condIndex].colIdx = colIdx === '' ? null : parseInt(colIdx);
-  editingConditions[condIndex].values = [];
+function setTopRelation(rel) {
+  editingRelation = rel === 'or' ? 'or' : 'and';
   render();
 }
 
-function toggleConditionValue(condIndex, val) {
-  const cond = editingConditions[condIndex];
+function setClauseRelation(clauseIdx, rel) {
+  editingClauses[clauseIdx].relation = rel === 'or' ? 'or' : 'and';
+  render();
+}
+
+function addCondition(clauseIdx) {
+  editingClauses[clauseIdx].conditions.push({ colIdx: null, values: [] });
+  render();
+}
+
+function removeCondition(clauseIdx, condIdx) {
+  const conds = editingClauses[clauseIdx].conditions;
+  conds.splice(condIdx, 1);
+  if (conds.length === 0) {
+    conds.push({ colIdx: null, values: [] });
+  }
+  render();
+}
+
+function handleConditionColChange(clauseIdx, condIdx, colIdx) {
+  const cond = editingClauses[clauseIdx].conditions[condIdx];
+  cond.colIdx = colIdx === '' ? null : parseInt(colIdx);
+  cond.values = [];
+  render();
+}
+
+function toggleConditionValue(clauseIdx, condIdx, val) {
+  const cond = editingClauses[clauseIdx].conditions[condIdx];
   const idx = cond.values.indexOf(val);
   if (idx >= 0) {
     cond.values.splice(idx, 1);
@@ -836,19 +906,45 @@ function toggleConditionValue(condIndex, val) {
   render();
 }
 
+// 选项之间关系：多选题可要求同时含某几个选项（and）
+function setConditionValuesRelation(clauseIdx, condIdx, rel) {
+  const cond = editingClauses[clauseIdx].conditions[condIdx];
+  cond.valuesRelation = rel === 'and' ? 'and' : 'or';
+  render();
+}
+
+// 仅保留已完整的条件（已选列且已选值），丢弃空条件组 —— 实时预览与保存共用
+function effectiveClauses() {
+  return editingClauses
+    .map(cl => ({
+      relation: cl.relation,
+      conditions: cl.conditions.filter(c => c.colIdx !== null && c.values.length > 0)
+        .map(c => ({ colIdx: c.colIdx, values: c.values, valuesRelation: c.valuesRelation === 'and' ? 'and' : 'or' }))
+    }))
+    .filter(cl => cl.conditions.length > 0);
+}
+
+// 实时命中人数：与已选表头样本数同口径
+function countEditingMatches() {
+  const clauses = effectiveClauses();
+  if (clauses.length === 0) return 0;
+  return groupRowsCustom(rows, [{ name: '__preview__', relation: editingRelation, clauses }])['__preview__'].length;
+}
+
 function saveGroup() {
-  // 验证所有条件都有效
-  const validConditions = editingConditions.filter(c => c.colIdx !== null && c.values.length > 0);
-  if (validConditions.length === 0) {
+  const clauses = effectiveClauses();
+  if (clauses.length === 0) {
     alert('请至少添加一个有效条件');
     return;
   }
 
-  // 生成表头名称
-  let name = validConditions.map(cond => {
-    const colName = cleanHeader(headers[cond.colIdx]) || `列${cond.colIdx + 1}`;
-    return cond.values.join('+');
-  }).join(' & ');
+  // 生成表头名称：条件内各值 '+'，条件间/组间按关系 ' & ' 或 ' | '，多条件组加括号
+  const op = rel => (rel === 'or' ? ' | ' : ' & ');
+  const clauseStrs = clauses.map(cl => {
+    const s = cl.conditions.map(c => c.values.join(c.valuesRelation === 'and' ? '&' : '+')).join(op(cl.relation));
+    return clauses.length > 1 && cl.conditions.length > 1 ? `(${s})` : s;
+  });
+  let name = clauseStrs.join(op(editingRelation));
 
   // 检查重名
   const existingNames = groups.map(g => g.name);
@@ -858,7 +954,7 @@ function saveGroup() {
     name = `${name} (${i})`;
   }
 
-  const newGroup = { name, conditions: validConditions };
+  const newGroup = { name, relation: editingRelation, clauses };
   if (editingGroupIndex >= 0) {
     groups[editingGroupIndex] = newGroup;
   } else {
@@ -866,7 +962,8 @@ function saveGroup() {
   }
 
   editingGroupIndex = -1;
-  editingConditions = [];
+  editingRelation = 'and';
+  editingClauses = [];
   render();
   saveConfig();
 }
@@ -1008,17 +1105,12 @@ function render() {
   } else {
     show(groupValuesContainer);
 
-    const values = new Set();
-    const valueCounts = {};
-    for (const row of rows) {
-      const v = safe(row[groupingColIdx]);
-      if (v !== null) {
-        values.add(v);
-        valueCounts[v] = (valueCounts[v] || 0) + 1;
-      }
-    }
-    const sortedValues = [...values].sort();
-    const selectedValues = groups.filter(g => g.conditions.length === 1 && g.conditions[0].colIdx === groupingColIdx && g.conditions[0].values.length === 1).map(g => g.conditions[0].values[0]);
+    // 多选单元格按英文逗号分割成独立选项，计数与选项数据同口径
+    const valueCounts = countOptions(rows, groupingColIdx, false);
+    const sortedValues = Object.keys(valueCounts).sort();
+    const selectedValues = groups.map(getBasicCondition).filter(c =>
+      c && c.colIdx === groupingColIdx && c.values.length === 1
+    ).map(c => c.values[0]);
 
     document.getElementById('groupValues').innerHTML = sortedValues.map(val => `
       <button class="group-tag ${selectedValues.includes(val) ? 'selected' : 'unselected'}"
@@ -1031,45 +1123,83 @@ function render() {
   const addGroupBtn = document.getElementById('addGroupBtn');
   const groupConditions = document.getElementById('groupConditions');
 
-  if (editingGroupIndex >= 0 || editingConditions.length > 0) {
+  if (editingGroupIndex >= 0 || editingClauses.length > 0) {
     show(groupEditorForm);
     hide(addGroupBtn);
 
-    groupConditions.innerHTML = editingConditions.map((cond, condIdx) => {
-      const selectedCol = cond.colIdx !== null ? cond.colIdx : '';
-      let valueButtons = '';
+    const relSelect = (handler, current, andLabel, orLabel) => `
+      <select onchange="${handler}" style="width:auto;">
+        <option value="and" ${current === 'and' ? 'selected' : ''}>${andLabel}</option>
+        <option value="or" ${current === 'or' ? 'selected' : ''}>${orLabel}</option>
+      </select>`;
 
-      if (selectedCol !== '') {
-        const values = new Set();
-        const valueCounts = {};
-        for (const row of rows) {
-          const v = safe(row[parseInt(selectedCol)]);
-          if (v !== null) {
-            values.add(v);
-            valueCounts[v] = (valueCounts[v] || 0) + 1;
+    // 条件组配色（黑白灰阶循环），多条件组时以色带区分各组
+    const CLAUSE_COLORS = ['#2B2B2B', '#555555', '#808080', '#3D3D3D', '#6B6B6B', '#999999'];
+
+    groupConditions.innerHTML = `
+      ${editingClauses.length > 1 ? `
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+          <span style="font-size:12px; color:var(--muted);">条件组之间</span>
+          ${relSelect('setTopRelation(this.value)', editingRelation, '且（同时满足所有组）', '或（满足任一组）')}
+        </div>` : ''}
+      ${editingClauses.map((cl, clauseIdx) => {
+        const condRows = cl.conditions.map((cond, condIdx) => {
+          const selectedCol = cond.colIdx !== null ? cond.colIdx : '';
+          let valueButtons = '';
+
+          if (selectedCol !== '') {
+            // 多选单元格按英文逗号分割成独立选项，计数与选项数据同口径
+            const valueCounts = countOptions(rows, parseInt(selectedCol), false);
+            const sortedValues = Object.keys(valueCounts).sort();
+            valueButtons = sortedValues.map(val => `
+              <button class="group-tag ${cond.values.includes(val) ? 'selected' : 'unselected'}"
+                      onclick="toggleConditionValue(${clauseIdx}, ${condIdx}, '${val.replace(/'/g, "\\'")}')">${val} <span style="opacity:0.6;font-size:11px">(${valueCounts[val]})</span></button>
+            `).join('');
           }
-        }
-        const sortedValues = [...values].sort();
-        valueButtons = sortedValues.map(val => `
-          <button class="group-tag ${cond.values.includes(val) ? 'selected' : 'unselected'}"
-                  onclick="toggleConditionValue(${condIdx}, '${val.replace(/'/g, "\\'")}')">${val} <span style="opacity:0.6;font-size:11px">(${valueCounts[val]})</span></button>
-        `).join('');
-      }
 
-      return `
-        <div class="condition-item">
-          <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
-            <span style="font-size:12px; color:var(--muted);">条件 ${condIdx + 1}</span>
-            <select onchange="handleConditionColChange(${condIdx}, this.value)" style="flex:1;">
-              <option value="">-- 选择列 --</option>
-              ${colOptions.map(opt => `<option value="${opt.idx}" ${parseInt(selectedCol) === opt.idx ? 'selected' : ''}>${opt.name}</option>`).join('')}
-            </select>
-            ${editingConditions.length > 1 ? `<button onclick="removeCondition(${condIdx})" style="background:none; border:none; color:var(--muted); cursor:pointer;">×</button>` : ''}
+          return `
+            <div class="condition-item">
+              <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+                <span style="font-size:12px; color:var(--muted);">条件 ${condIdx + 1}</span>
+                <select onchange="handleConditionColChange(${clauseIdx}, ${condIdx}, this.value)" style="flex:1;">
+                  <option value="">-- 选择列 --</option>
+                  ${colOptions.map(opt => `<option value="${opt.idx}" ${parseInt(selectedCol) === opt.idx ? 'selected' : ''}>${opt.name}</option>`).join('')}
+                </select>
+                ${cl.conditions.length > 1 ? `<button onclick="removeCondition(${clauseIdx}, ${condIdx})" style="background:none; border:none; color:var(--muted); cursor:pointer;">×</button>` : ''}
+              </div>
+              ${selectedCol !== '' ? `
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                  <span style="font-size:12px; color:var(--muted);">选项之间</span>
+                  ${relSelect(`setConditionValuesRelation(${clauseIdx}, ${condIdx}, this.value)`, cond.valuesRelation === 'and' ? 'and' : 'or', '全部（且，多选题）', '任一（或）')}
+                </div>
+                <div class="group-values">${valueButtons}</div>` : ''}
+            </div>
+          `;
+        }).join('');
+
+        const clColor = CLAUSE_COLORS[clauseIdx % CLAUSE_COLORS.length];
+        return `
+          <div ${editingClauses.length > 1 ? `style="border-left:3px solid ${clColor}; background:${clColor}14; padding:10px 12px; margin-bottom:12px; border-radius:4px;"` : ''}>
+            <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+              <span style="font-size:12px; ${editingClauses.length > 1 ? `color:${clColor}; font-weight:600;` : 'color:var(--muted);'}">${editingClauses.length > 1 ? `条件组 ${clauseIdx + 1}` : '条件关系'}</span>
+              ${relSelect(`setClauseRelation(${clauseIdx}, this.value)`, cl.relation,
+                editingClauses.length > 1 ? '组内：且' : '且（同时满足）',
+                editingClauses.length > 1 ? '组内：或' : '或（满足任一）')}
+              ${editingClauses.length > 1 ? `<button onclick="removeClause(${clauseIdx})" style="margin-left:auto; background:none; border:none; color:var(--muted); cursor:pointer;" title="删除条件组">×</button>` : ''}
+            </div>
+            ${condRows}
+            <button class="btn btn-secondary" style="margin-top:12px; font-size:12px; padding:5px 12px;" onclick="addCondition(${clauseIdx})">+ 添加条件</button>
           </div>
-          ${selectedCol !== '' ? `<div class="group-values">${valueButtons}</div>` : ''}
-        </div>
-      `;
-    }).join('');
+        `;
+      }).join('')}
+    `;
+
+    // 保存表头按钮右侧实时显示当前条件命中人数（口径与已选表头样本数一致）
+    const matchCountEl = document.getElementById('groupMatchCount');
+    if (matchCountEl) {
+      const matchCount = countEditingMatches();
+      matchCountEl.innerHTML = `命中 <strong style="color:var(--accent)">${matchCount}</strong> 人`;
+    }
   } else {
     hide(groupEditorForm);
     show(addGroupBtn);
@@ -1165,21 +1295,9 @@ function loadSavedConfig() {
     if (saved) {
       const data = JSON.parse(saved);
 
-      // 兼容旧格式：conditions: [[colIdx, val]] → 新格式：conditions: [{colIdx, values}]
+      // 兼容旧格式：conditions: [[colIdx, val]] / [{colIdx, values}] → clauses 结构（见 migrateGroup）
       if (data.groups && Array.isArray(data.groups)) {
-        groups = data.groups.map(g => {
-          if (g.conditions && g.conditions.length > 0) {
-            // 检查是否是旧格式（数组的第一个元素是数组）
-            if (Array.isArray(g.conditions[0])) {
-              // 旧格式转换为新格式
-              return {
-                name: g.name,
-                conditions: [{ colIdx: g.conditions[0][0], values: [g.conditions[0][1]] }]
-              };
-            }
-          }
-          return g; // 已经是新格式
-        });
+        groups = data.groups.map(migrateGroup);
       } else {
         groups = [];
       }
@@ -1206,7 +1324,8 @@ function resetConfig() {
   groupingColIdx = null;
   config = { groups: [], ordered: {}, mean_cols: {}, multi_idx: [] };
   editingGroupIndex = -1;
-  editingConditions = [];
+  editingRelation = 'and';
+  editingClauses = [];
   initModules();
   localStorage.removeItem('survey_analysis_config');
   render();
@@ -1232,7 +1351,7 @@ function importConfig(e) {
   reader.onload = (evt) => {
     try {
       const data = JSON.parse(evt.target.result);
-      if (data.groups) groups = data.groups;
+      if (data.groups) groups = data.groups.map(migrateGroup);
       if (data.selectedQuestions) selectedQuestions = data.selectedQuestions;
       if (data.groupingColIdx !== undefined) groupingColIdx = data.groupingColIdx;
       if (data.config) config = data.config;
@@ -1288,7 +1407,7 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('selectNoneBtn').addEventListener('click', selectNoneQuestions);
   document.getElementById('downloadBtn').addEventListener('click', downloadExcel);
   document.getElementById('addGroupBtn').addEventListener('click', () => openGroupEditor(-1));
-  document.getElementById('addConditionBtn').addEventListener('click', addCondition);
+  document.getElementById('addClauseBtn').addEventListener('click', addClause);
   document.getElementById('saveGroupBtn').addEventListener('click', saveGroup);
   document.getElementById('cancelGroupBtn').addEventListener('click', cancelGroupEditor);
 
